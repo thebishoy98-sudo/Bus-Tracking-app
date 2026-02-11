@@ -1,15 +1,18 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import os
+from pathlib import Path
 from sqlalchemy import func
-import numpy as np
 
-app = Flask(__name__)
+BASE_DIR = Path(__file__).resolve().parent
+template_dir = str(BASE_DIR / 'templates')
+default_sqlite_uri = f"sqlite:///{BASE_DIR / 'bus_tracker.db'}"
+
+app = Flask(__name__, template_folder=template_dir)
 
 # Database configuration
-basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'bus_tracker.db'))
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', default_sqlite_uri)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -90,7 +93,16 @@ with app.app_context():
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    primary_template = os.path.join(template_dir, 'index.html')
+    if os.path.exists(primary_template):
+        return render_template('index.html')
+
+    # Backward-compatible fallback if a deploy only has root index.html
+    legacy_template = BASE_DIR / 'index.html'
+    if legacy_template.exists():
+        return send_from_directory(str(BASE_DIR), 'index.html')
+
+    return 'Template file not found. Expected templates/index.html.', 500
 
 @app.route('/api/expenses', methods=['GET'])
 def get_expenses():
