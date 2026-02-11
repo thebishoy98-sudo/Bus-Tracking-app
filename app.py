@@ -5,16 +5,10 @@ import os
 from pathlib import Path
 from sqlalchemy import func
 
-BASE_DIR = Path(__file__).resolve().parent
-# Backward-compatible alias used by existing code paths
-basedir = str(BASE_DIR)
-template_dir = str(BASE_DIR / 'templates')
-default_sqlite_uri = f"sqlite:///{BASE_DIR / 'bus_tracker.db'}"
-
-app = Flask(__name__, template_folder=template_dir)
+app = Flask(__name__, template_folder='.')
 
 # Database configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', default_sqlite_uri)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'bus_tracker.db'))
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
