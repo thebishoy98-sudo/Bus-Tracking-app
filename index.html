@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bus Expense Tracker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 12px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            background: white;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .tab:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .tab.active:hover {
+            background: white;
+        }
+
+        .content {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Add Expense Form */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: transform 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        /* Expenses Table */
+        .expenses-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .expenses-table th {
+            background: #f8f9fa;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .expenses-table td {
+            padding: 15px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .expenses-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .badge-allen {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .badge-bishoy {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .badge-turo {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .delete-btn {
+            background: #f5576c;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+
+        .delete-btn:hover {
+            background: #d63447;
+        }
+
+        /* Analytics */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-card.green {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .stat-card.orange {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        }
+
+        .stat-card.blue {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .stat-card h3 {
+            font-size: 0.875rem;
+            opacity: 0.9;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .projection-card {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+
+        .projection-card h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .projection-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .projection-item:last-child {
+            border-bottom: none;
+        }
+
+        .projection-label {
+            color: #666;
+        }
+
+        .projection-value {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 1.8rem;
+            }
+
+            .tabs {
+                flex-direction: column;
+            }
+
+            .expenses-table {
+                font-size: 0.875rem;
+            }
+
+            .expenses-table th,
+            .expenses-table td {
+                padding: 10px 8px;
+            }
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚌 Bus Expense Tracker</h1>
+            <p>Track expenses and Turo income for Allen & Bishoy</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('add')">➕ Add Expense</button>
+            <button class="tab" onclick="switchTab('expenses')">📋 All Expenses</button>
+            <button class="tab" onclick="switchTab('analytics')">📊 Analytics</button>
+        </div>
+
+        <div class="content">
+            <!-- Add Expense Tab -->
+            <div id="add" class="tab-content active">
+                <h2 style="margin-bottom: 25px;">Add New Expense</h2>
+                <form id="expenseForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="item">Item/Description</label>
+                            <input type="text" id="item" required placeholder="e.g., Tires, Gas, Turo Payment">
+                        </div>
+                        <div class="form-group">
+                            <label for="amount">Amount ($)</label>
+                            <input type="number" id="amount" step="0.01" required placeholder="0.00">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="paidBy">Paid By</label>
+                            <select id="paidBy" required>
+                                <option value="">Select...</option>
+                                <option value="Allen">Allen</option>
+                                <option value="Bishoy">Bishoy</option>
+                                <option value="Turo">Turo (Income)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="date">Date</label>
+                            <input type="date" id="date">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn">Add Expense</button>
+                </form>
+            </div>
+
+            <!-- All Expenses Tab -->
+            <div id="expenses" class="tab-content">
+                <h2 style="margin-bottom: 25px;">All Expenses</h2>
+                <div id="expensesList">
+                    <div class="loading">Loading expenses...</div>
+                </div>
+            </div>
+
+            <!-- Analytics Tab -->
+            <div id="analytics" class="tab-content">
+                <h2 style="margin-bottom: 25px;">Financial Analytics</h2>
+                <div id="analyticsContent">
+                    <div class="loading">Loading analytics...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Set today's date as default
+        document.getElementById('date').valueAsDate = new Date();
+
+        // Tab switching
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tabName).classList.add('active');
+
+            if (tabName === 'expenses') {
+                loadExpenses();
+            } else if (tabName === 'analytics') {
+                loadAnalytics();
+            }
+        }
+
+        // Add expense
+        document.getElementById('expenseForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const data = {
+                item: document.getElementById('item').value,
+                amount: document.getElementById('amount').value,
+                paid_by: document.getElementById('paidBy').value,
+                date: document.getElementById('date').value
+            };
+
+            try {
+                const response = await fetch('/api/expenses', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    alert('Expense added successfully!');
+                    document.getElementById('expenseForm').reset();
+                    document.getElementById('date').valueAsDate = new Date();
+                } else {
+                    alert('Error adding expense');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        });
+
+        // Load expenses
+        async function loadExpenses() {
+            try {
+                const response = await fetch('/api/expenses');
+                const expenses = await response.json();
+
+                const container = document.getElementById('expensesList');
+
+                if (expenses.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div style="font-size: 4rem;">📝</div>
+                            <h3>No expenses yet</h3>
+                            <p>Add your first expense to get started</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = `
+                    <table class="expenses-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Item</th>
+                                <th>Amount</th>
+                                <th>Paid By</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                expenses.forEach(expense => {
+                    const badgeClass = `badge-${expense.paid_by.toLowerCase()}`;
+                    html += `
+                        <tr>
+                            <td>${expense.date}</td>
+                            <td>${expense.item}</td>
+                            <td>$${parseFloat(expense.amount).toFixed(2)}</td>
+                            <td><span class="badge ${badgeClass}">${expense.paid_by}</span></td>
+                            <td>
+                                <button class="delete-btn" onclick="deleteExpense(${expense.id})">Delete</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                        </tbody>
+                    </table>
+                `;
+
+                container.innerHTML = html;
+            } catch (error) {
+                document.getElementById('expensesList').innerHTML = `
+                    <div class="empty-state">
+                        <p>Error loading expenses</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Delete expense
+        async function deleteExpense(id) {
+            if (!confirm('Are you sure you want to delete this expense?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/expenses/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    loadExpenses();
+                } else {
+                    alert('Error deleting expense');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        // Load analytics
+        async function loadAnalytics() {
+            try {
+                const response = await fetch('/api/analytics');
+                const data = await response.json();
+
+                const container = document.getElementById('analyticsContent');
+
+                let html = `
+                    <div class="stats-grid">
+                        <div class="stat-card orange">
+                            <h3>Allen Paid</h3>
+                            <div class="value">$${data.allen_paid.toFixed(2)}</div>
+                        </div>
+                        <div class="stat-card orange">
+                            <h3>Bishoy Paid</h3>
+                            <div class="value">$${data.bishoy_paid.toFixed(2)}</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Total Costs</h3>
+                            <div class="value">$${data.total_costs.toFixed(2)}</div>
+                        </div>
+                        <div class="stat-card green">
+                            <h3>Total Turo Income</h3>
+                            <div class="value">$${data.turo_income.toFixed(2)}</div>
+                        </div>
+                    </div>
+
+                    <h3 style="margin: 30px 0 20px 0; color: #333;">Split Breakdown (50/50)</h3>
+                    <div class="stats-grid">
+                        <div class="stat-card blue">
+                            <h3>Allen's Share</h3>
+                            <div class="value">$${data.allen_share.toFixed(2)}</div>
+                        </div>
+                        <div class="stat-card blue">
+                            <h3>Bishoy's Share</h3>
+                            <div class="value">$${data.bishoy_share.toFixed(2)}</div>
+                        </div>
+                    </div>
+
+                    <h3 style="margin: 30px 0 20px 0; color: #333;">Net Position (Share - Paid)</h3>
+                    <div class="stats-grid">
+                        <div class="stat-card ${data.allen_net >= 0 ? 'green' : 'orange'}">
+                            <h3>Allen's Net</h3>
+                            <div class="value">${data.allen_net >= 0 ? '+' : ''}$${data.allen_net.toFixed(2)}</div>
+                            <p style="margin-top: 10px; opacity: 0.9; font-size: 0.875rem;">
+                                ${data.allen_net >= 0 ? 'In profit' : 'In the red'}
+                            </p>
+                        </div>
+                        <div class="stat-card ${data.bishoy_net >= 0 ? 'green' : 'orange'}">
+                            <h3>Bishoy's Net</h3>
+                            <div class="value">${data.bishoy_net >= 0 ? '+' : ''}$${data.bishoy_net.toFixed(2)}</div>
+                            <p style="margin-top: 10px; opacity: 0.9; font-size: 0.875rem;">
+                                ${data.bishoy_net >= 0 ? 'In profit' : 'In the red'}
+                            </p>
+                        </div>
+                    </div>
+                `;
+
+                if (data.projection.break_even_date) {
+                    html += `
+                        <div class="projection-card">
+                            <h3>📈 Break-Even Projection</h3>
+                            <div class="projection-item">
+                                <span class="projection-label">Average Daily Income:</span>
+                                <span class="projection-value">$${data.projection.daily_average.toFixed(2)}</span>
+                            </div>
+                            <div class="projection-item">
+                                <span class="projection-label">Average Monthly Income:</span>
+                                <span class="projection-value">$${data.projection.monthly_average.toFixed(2)}</span>
+                            </div>
+                            <div class="projection-item">
+                                <span class="projection-label">Days Until Break-Even:</span>
+                                <span class="projection-value">${data.projection.days_to_break_even} days</span>
+                            </div>
+                            <div class="projection-item">
+                                <span class="projection-label">Projected Break-Even Date:</span>
+                                <span class="projection-value" style="color: #11998e; font-size: 1.1rem;">
+                                    ${new Date(data.projection.break_even_date).toLocaleDateString('en-US', { 
+                                        year: 'numeric', 
+                                        month: 'long', 
+                                        day: 'numeric' 
+                                    })}
+                                </span>
+                            </div>
+                        </div>
+                    `;
+                } else if (data.turo_income >= data.total_costs) {
+                    html += `
+                        <div class="projection-card" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white;">
+                            <h3>🎉 Congratulations!</h3>
+                            <p style="font-size: 1.2rem; margin-top: 15px;">
+                                You've already broken even and are making profit!
+                            </p>
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="projection-card">
+                            <h3>📊 Projection</h3>
+                            <p style="color: #666;">Add more Turo income entries to see break-even projections.</p>
+                        </div>
+                    `;
+                }
+
+                container.innerHTML = html;
+            } catch (error) {
+                document.getElementById('analyticsContent').innerHTML = `
+                    <div class="empty-state">
+                        <p>Error loading analytics</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Load expenses on page load
+        loadExpenses();
+    </script>
+</body>
+</html>
