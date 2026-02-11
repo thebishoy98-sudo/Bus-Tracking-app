@@ -3,7 +3,6 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import os
 from sqlalchemy import func
-import numpy as np
 
 app = Flask(__name__, template_folder='.')
 
