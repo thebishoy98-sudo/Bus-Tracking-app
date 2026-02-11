@@ -5,14 +5,10 @@ import os
 from pathlib import Path
 from sqlalchemy import func
 
-BASE_DIR = Path(__file__).resolve().parent
-template_dir = str(BASE_DIR / 'templates')
-default_sqlite_uri = f"sqlite:///{BASE_DIR / 'bus_tracker.db'}"
-
-app = Flask(__name__, template_folder=template_dir)
+app = Flask(__name__, template_folder='.')
 
 # Database configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', default_sqlite_uri)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'bus_tracker.db'))
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -98,9 +94,9 @@ def index():
         return render_template('index.html')
 
     # Backward-compatible fallback if a deploy only has root index.html
-    legacy_template = BASE_DIR / 'index.html'
-    if legacy_template.exists():
-        return send_from_directory(str(BASE_DIR), 'index.html')
+    legacy_template = os.path.join(basedir, 'index.html')
+    if os.path.exists(legacy_template):
+        return send_from_directory(basedir, 'index.html')
 
     return 'Template file not found. Expected templates/index.html.', 500
 

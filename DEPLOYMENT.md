@@ -109,11 +109,3 @@ Your service has a manual Start Command override.
 1. Go to Render → Web Service → **Settings**
 2. Update **Start Command** to: `gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120`
 3. Save and redeploy
-
-### If Render shows an old commit hash
-
-If logs say `Checking out commit ...` that does not include your latest fix, force a fresh deploy:
-
-1. Push the latest commit to your connected branch (`main`)
-2. In Render, click **Manual Deploy** → **Deploy latest commit**
-3. Confirm logs show the expected commit hash before startup
