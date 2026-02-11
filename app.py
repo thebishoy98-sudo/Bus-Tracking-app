@@ -5,10 +5,7 @@ import os
 from sqlalchemy import func
 import numpy as np
 
-basedir = os.path.abspath(os.path.dirname(__file__))
-template_dir = os.path.join(basedir, 'templates')
-
-app = Flask(__name__, template_folder=template_dir)
+app = Flask(__name__, template_folder='.')
 
 # Database configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'bus_tracker.db'))
