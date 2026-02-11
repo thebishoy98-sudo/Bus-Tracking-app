@@ -196,6 +196,9 @@
             border-radius: 6px;
             cursor: pointer;
             font-size: 0.875rem;
+            min-height: 40px;
+            line-height: 1;
+            white-space: nowrap;
         }
 
         .delete-btn:hover {
@@ -308,6 +311,63 @@
             .expenses-table th,
             .expenses-table td {
                 padding: 10px 8px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 12px;
+            }
+
+            .content {
+                padding: 20px;
+            }
+
+            .expenses-table thead {
+                display: none;
+            }
+
+            .expenses-table,
+            .expenses-table tbody,
+            .expenses-table tr,
+            .expenses-table td {
+                display: block;
+                width: 100%;
+            }
+
+            .expenses-table tr {
+                background: #fff;
+                border: 1px solid #eee;
+                border-radius: 12px;
+                padding: 12px 14px;
+                margin-bottom: 12px;
+            }
+
+            .expenses-table td {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 16px;
+                padding: 8px 0;
+                border-bottom: none;
+            }
+
+            .expenses-table td::before {
+                content: attr(data-label);
+                color: #666;
+                font-weight: 600;
+                font-size: 0.85rem;
+            }
+
+            .expenses-table td:last-child {
+                padding-top: 12px;
+            }
+
+            .delete-btn {
+                width: 100%;
+                min-height: 44px;
+                border-radius: 10px;
+                font-size: 0.95rem;
             }
         }
 
@@ -469,11 +529,11 @@
                     const badgeClass = `badge-${expense.paid_by.toLowerCase()}`;
                     html += `
                         <tr>
-                            <td>${expense.date}</td>
-                            <td>${expense.item}</td>
-                            <td>$${parseFloat(expense.amount).toFixed(2)}</td>
-                            <td><span class="badge ${badgeClass}">${expense.paid_by}</span></td>
-                            <td>
+                            <td data-label="Date">${expense.date}</td>
+                            <td data-label="Item">${expense.item}</td>
+                            <td data-label="Amount">$${parseFloat(expense.amount).toFixed(2)}</td>
+                            <td data-label="Paid By"><span class="badge ${badgeClass}">${expense.paid_by}</span></td>
+                            <td data-label="Action">
                                 <button class="delete-btn" onclick="deleteExpense(${expense.id})">Delete</button>
                             </td>
                         </tr>
