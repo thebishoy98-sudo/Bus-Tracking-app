@@ -17,6 +17,7 @@
      - **Name:** bus-expense-tracker (or anything you want)
      - **Build Command:** `pip install -r requirements.txt`
      - **Start Command:** `gunicorn app:app`
+     - **Important:** In Render Dashboard → Settings, make sure Start Command is **not** `python app.py`
      - **Instance Type:** Free
 
 4. **Deploy:**
@@ -100,3 +101,11 @@ Let me know if you want:
 - Charts/graphs
 - Monthly reports
 - Different split ratios per expense
+
+### If you see "Running 'python app.py'" in logs
+
+Your service has a manual Start Command override.
+
+1. Go to Render → Web Service → **Settings**
+2. Update **Start Command** to: `gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120`
+3. Save and redeploy
