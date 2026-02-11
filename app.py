@@ -5,7 +5,10 @@ import os
 from pathlib import Path
 from sqlalchemy import func
 
-app = Flask(__name__, template_folder='.')
+basedir = os.path.abspath(os.path.dirname(__file__))
+template_dir = os.path.join(basedir, 'templates')
+
+app = Flask(__name__, template_folder=template_dir)
 
 # Database configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'bus_tracker.db'))
@@ -85,7 +88,7 @@ with app.app_context():
             db.session.add(expense)
         
         db.session.commit()
-        print(f"✅ Loaded {len(initial_expenses)} initial expenses from Google Sheet!")
+        print(f"Loaded {len(initial_expenses)} initial expenses from Google Sheet!")
 
 @app.route('/')
 def index():
