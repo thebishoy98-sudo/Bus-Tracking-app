@@ -154,6 +154,18 @@
             margin: 0;
         }
 
+        .expenses-header h3 {
+            color: #333;
+            font-size: 1.25rem;
+            margin: 0;
+        }
+
+        .analytics-details {
+            border-top: 1px solid #e8e8e8;
+            margin-top: 30px;
+            padding-top: 24px;
+        }
+
         .expense-controls {
             display: flex;
             align-items: end;
@@ -559,6 +571,33 @@
                 <div id="analyticsContent">
                     <div class="loading">Loading analytics...</div>
                 </div>
+                <div class="analytics-details">
+                    <div class="expenses-header">
+                        <h3>Payment Details</h3>
+                        <div class="expense-controls">
+                            <div class="control-group">
+                                <label for="analyticsPayerFilter">Paid By</label>
+                                <select id="analyticsPayerFilter">
+                                    <option value="All">All</option>
+                                    <option value="Allen">Allen</option>
+                                    <option value="Bishoy">Bishoy</option>
+                                    <option value="Turo">Turo</option>
+                                </select>
+                            </div>
+                            <div class="control-group">
+                                <label for="analyticsPageSize">Rows Per Page</label>
+                                <select id="analyticsPageSize">
+                                    <option value="5">5</option>
+                                    <option value="10" selected>10</option>
+                                    <option value="25">25</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="analyticsExpenseList">
+                        <div class="loading">Loading payment details...</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -569,6 +608,8 @@
 
         let allExpenses = [];
         let currentPage = 1;
+        let analyticsExpenses = [];
+        let analyticsCurrentPage = 1;
 
         document.getElementById('payerFilter').addEventListener('change', () => {
             currentPage = 1;
@@ -578,6 +619,16 @@
         document.getElementById('pageSize').addEventListener('change', () => {
             currentPage = 1;
             renderExpensesPage();
+        });
+
+        document.getElementById('analyticsPayerFilter').addEventListener('change', () => {
+            analyticsCurrentPage = 1;
+            renderAnalyticsExpensesPage();
+        });
+
+        document.getElementById('analyticsPageSize').addEventListener('change', () => {
+            analyticsCurrentPage = 1;
+            renderAnalyticsExpensesPage();
         });
 
         // Tab switching
@@ -594,6 +645,7 @@
                 loadExpenses();
             } else if (tabName === 'analytics') {
                 loadAnalytics();
+                loadAnalyticsExpenses();
             }
         }
 
@@ -738,6 +790,112 @@
             return div.innerHTML;
         }
 
+        async function loadAnalyticsExpenses() {
+            try {
+                const response = await fetch('/api/expenses');
+                analyticsExpenses = await response.json();
+                renderAnalyticsExpensesPage();
+            } catch (error) {
+                document.getElementById('analyticsExpenseList').innerHTML = `
+                    <div class="empty-state">
+                        <p>Error loading payment details</p>
+                    </div>
+                `;
+            }
+        }
+
+        function getFilteredAnalyticsExpenses() {
+            const payerFilter = document.getElementById('analyticsPayerFilter').value;
+
+            if (payerFilter === 'All') {
+                return analyticsExpenses;
+            }
+
+            return analyticsExpenses.filter(expense => expense.paid_by === payerFilter);
+        }
+
+        function renderAnalyticsExpensesPage() {
+            const container = document.getElementById('analyticsExpenseList');
+            const filteredExpenses = getFilteredAnalyticsExpenses();
+            const pageSize = parseInt(document.getElementById('analyticsPageSize').value, 10);
+            const totalPages = Math.max(1, Math.ceil(filteredExpenses.length / pageSize));
+
+            analyticsCurrentPage = Math.min(analyticsCurrentPage, totalPages);
+
+            if (filteredExpenses.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div style="font-size: 4rem;">📝</div>
+                        <h3>No matching payments</h3>
+                        <p>Try a different payer filter or add a new payment.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const startIndex = (analyticsCurrentPage - 1) * pageSize;
+            const pageExpenses = filteredExpenses.slice(startIndex, startIndex + pageSize);
+            const firstVisible = startIndex + 1;
+            const lastVisible = startIndex + pageExpenses.length;
+            const totalAmount = filteredExpenses.reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
+
+            let html = `
+                <p class="expense-summary">
+                    Showing ${firstVisible}-${lastVisible} of ${filteredExpenses.length} payments,
+                    total $${totalAmount.toFixed(2)}
+                </p>
+                <table class="expenses-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Item</th>
+                            <th>Amount</th>
+                            <th>Paid By</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            pageExpenses.forEach(expense => {
+                const badgeClass = `badge-${expense.paid_by.toLowerCase()}`;
+                html += `
+                    <tr>
+                        <td data-label="Date">${escapeHtml(expense.date)}</td>
+                        <td data-label="Item">${escapeHtml(expense.item)}</td>
+                        <td data-label="Amount">$${parseFloat(expense.amount).toFixed(2)}</td>
+                        <td data-label="Paid By"><span class="badge ${badgeClass}">${escapeHtml(expense.paid_by)}</span></td>
+                        <td data-label="Action">
+                            <button class="delete-btn" onclick="deleteExpense(${expense.id})">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+                <div class="pagination">
+                    <button class="pagination-btn" id="analyticsPrevPage" onclick="changeAnalyticsPage(-1)" ${analyticsCurrentPage === 1 ? 'disabled' : ''}>
+                        Previous
+                    </button>
+                    <div class="page-status">Page ${analyticsCurrentPage} of ${totalPages}</div>
+                    <button class="pagination-btn" id="analyticsNextPage" onclick="changeAnalyticsPage(1)" ${analyticsCurrentPage === totalPages ? 'disabled' : ''}>
+                        Next
+                    </button>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function changeAnalyticsPage(direction) {
+            const pageSize = parseInt(document.getElementById('analyticsPageSize').value, 10);
+            const totalPages = Math.max(1, Math.ceil(getFilteredAnalyticsExpenses().length / pageSize));
+            analyticsCurrentPage = Math.min(Math.max(analyticsCurrentPage + direction, 1), totalPages);
+            renderAnalyticsExpensesPage();
+        }
+
         // Delete expense
         async function deleteExpense(id) {
             if (!confirm('Are you sure you want to delete this expense?')) {
@@ -750,7 +908,17 @@
                 });
 
                 if (response.ok) {
-                    loadExpenses();
+                    const analyticsTabActive = document.getElementById('analytics').classList.contains('active');
+                    const expensesTabActive = document.getElementById('expenses').classList.contains('active');
+
+                    if (expensesTabActive) {
+                        loadExpenses();
+                    }
+
+                    if (analyticsTabActive) {
+                        loadAnalytics();
+                        loadAnalyticsExpenses();
+                    }
                 } else {
                     alert('Error deleting expense');
                 }

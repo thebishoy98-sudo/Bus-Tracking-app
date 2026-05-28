@@ -76,6 +76,21 @@ class ExpenseAppTestCase(unittest.TestCase):
         self.assertIn("renderExpensesPage", html)
         self.assertIn("@media (max-width: 640px)", html)
 
+    def test_analytics_template_has_payment_detail_filter_and_pagination(self):
+        response = self.client.get("/")
+        html = response.get_data(as_text=True)
+        analytics_start = html.index('id="analytics"')
+        script_start = html.index("<script>")
+        analytics_html = html[analytics_start:script_start]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('id="analyticsPayerFilter"', analytics_html)
+        self.assertIn('id="analyticsPageSize"', analytics_html)
+        self.assertIn('id="analyticsExpenseList"', analytics_html)
+        self.assertIn("analyticsPrevPage", html)
+        self.assertIn("analyticsNextPage", html)
+        self.assertIn("renderAnalyticsExpensesPage", html)
+
 
 if __name__ == "__main__":
     unittest.main()
