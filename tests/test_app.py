@@ -3,6 +3,7 @@ import os
 import tempfile
 import unittest
 from datetime import date
+from unittest.mock import patch
 
 
 class ExpenseAppTestCase(unittest.TestCase):
@@ -60,6 +61,21 @@ class ExpenseAppTestCase(unittest.TestCase):
             [expense["item"] for expense in response.get_json()],
             ["New registration", "Old gas"],
         )
+
+    def test_database_uri_uses_render_postgres_url_when_available(self):
+        with patch.dict(os.environ, {"DATABASE_URL": "postgres://user:pass@host/db"}, clear=False):
+            self.assertEqual(
+                self.app_module.get_database_uri(),
+                "postgresql://user:pass@host/db",
+            )
+
+    def test_database_uri_uses_data_dir_sqlite_when_configured(self):
+        with tempfile.TemporaryDirectory() as data_dir:
+            with patch.dict(os.environ, {"DATA_DIR": data_dir}, clear=True):
+                self.assertEqual(
+                    self.app_module.get_database_uri(),
+                    f"sqlite:///{os.path.join(data_dir, 'bus_tracker.db')}",
+                )
 
     def test_expenses_template_has_filter_pagination_and_mobile_controls(self):
         response = self.client.get("/")

@@ -10,8 +10,22 @@ template_dir = os.path.join(basedir, 'templates')
 
 app = Flask(__name__, template_folder=template_dir)
 
+def get_database_uri():
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url:
+        if database_url.startswith('postgres://'):
+            return database_url.replace('postgres://', 'postgresql://', 1)
+        return database_url
+
+    data_dir = os.environ.get('DATA_DIR')
+    if data_dir:
+        Path(data_dir).mkdir(parents=True, exist_ok=True)
+        return 'sqlite:///' + str(Path(data_dir) / 'bus_tracker.db')
+
+    return 'sqlite:///' + os.path.join(basedir, 'bus_tracker.db')
+
 # Database configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'bus_tracker.db'))
+app.config['SQLALCHEMY_DATABASE_URI'] = get_database_uri()
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
