@@ -142,6 +142,40 @@
         }
 
         /* Expenses Table */
+        .expenses-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: end;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .expenses-header h2 {
+            margin: 0;
+        }
+
+        .expense-controls {
+            display: flex;
+            align-items: end;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            min-width: 150px;
+        }
+
+        .control-group label {
+            font-size: 0.82rem;
+            color: #555;
+        }
+
+        .expense-summary {
+            color: #666;
+            font-size: 0.95rem;
+            margin: 0 0 12px 0;
+        }
+
         .expenses-table {
             width: 100%;
             border-collapse: collapse;
@@ -203,6 +237,37 @@
 
         .delete-btn:hover {
             background: #d63447;
+        }
+
+        .pagination {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .pagination-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            min-height: 44px;
+            padding: 0 18px;
+        }
+
+        .pagination-btn:disabled {
+            background: #d7d9e8;
+            color: #777;
+            cursor: not-allowed;
+        }
+
+        .page-status {
+            color: #444;
+            font-weight: 600;
+            text-align: center;
         }
 
         /* Analytics */
@@ -320,7 +385,30 @@
             }
 
             .content {
-                padding: 20px;
+                padding: 18px;
+                border-radius: 12px;
+            }
+
+            .expenses-header {
+                display: block;
+            }
+
+            .expenses-header h2 {
+                margin-bottom: 14px;
+            }
+
+            .expense-controls {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .control-group {
+                min-width: 0;
+            }
+
+            .expense-summary {
+                line-height: 1.4;
             }
 
             .expenses-table thead {
@@ -360,6 +448,8 @@
             }
 
             .expenses-table td:last-child {
+                align-items: stretch;
+                flex-direction: column;
                 padding-top: 12px;
             }
 
@@ -368,6 +458,15 @@
                 min-height: 44px;
                 border-radius: 10px;
                 font-size: 0.95rem;
+            }
+
+            .pagination {
+                display: grid;
+                grid-template-columns: 1fr;
+            }
+
+            .pagination-btn {
+                width: 100%;
             }
         }
 
@@ -386,9 +485,9 @@
         </div>
 
         <div class="tabs">
-            <button class="tab active" onclick="switchTab('add')">➕ Add Expense</button>
-            <button class="tab" onclick="switchTab('expenses')">📋 All Expenses</button>
-            <button class="tab" onclick="switchTab('analytics')">📊 Analytics</button>
+            <button class="tab active" onclick="switchTab('add', this)">➕ Add Expense</button>
+            <button class="tab" onclick="switchTab('expenses', this)">📋 All Expenses</button>
+            <button class="tab" onclick="switchTab('analytics', this)">📊 Analytics</button>
         </div>
 
         <div class="content">
@@ -427,7 +526,28 @@
 
             <!-- All Expenses Tab -->
             <div id="expenses" class="tab-content">
-                <h2 style="margin-bottom: 25px;">All Expenses</h2>
+                <div class="expenses-header">
+                    <h2>All Expenses</h2>
+                    <div class="expense-controls">
+                        <div class="control-group">
+                            <label for="payerFilter">Paid By</label>
+                            <select id="payerFilter">
+                                <option value="All">All</option>
+                                <option value="Allen">Allen</option>
+                                <option value="Bishoy">Bishoy</option>
+                                <option value="Turo">Turo</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label for="pageSize">Rows Per Page</label>
+                            <select id="pageSize">
+                                <option value="5">5</option>
+                                <option value="10" selected>10</option>
+                                <option value="25">25</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
                 <div id="expensesList">
                     <div class="loading">Loading expenses...</div>
                 </div>
@@ -447,12 +567,27 @@
         // Set today's date as default
         document.getElementById('date').valueAsDate = new Date();
 
+        let allExpenses = [];
+        let currentPage = 1;
+
+        document.getElementById('payerFilter').addEventListener('change', () => {
+            currentPage = 1;
+            renderExpensesPage();
+        });
+
+        document.getElementById('pageSize').addEventListener('change', () => {
+            currentPage = 1;
+            renderExpensesPage();
+        });
+
         // Tab switching
-        function switchTab(tabName) {
+        function switchTab(tabName, tabButton) {
             document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
             
-            event.target.classList.add('active');
+            if (tabButton) {
+                tabButton.classList.add('active');
+            }
             document.getElementById(tabName).classList.add('active');
 
             if (tabName === 'expenses') {
@@ -496,56 +631,8 @@
         async function loadExpenses() {
             try {
                 const response = await fetch('/api/expenses');
-                const expenses = await response.json();
-
-                const container = document.getElementById('expensesList');
-
-                if (expenses.length === 0) {
-                    container.innerHTML = `
-                        <div class="empty-state">
-                            <div style="font-size: 4rem;">📝</div>
-                            <h3>No expenses yet</h3>
-                            <p>Add your first expense to get started</p>
-                        </div>
-                    `;
-                    return;
-                }
-
-                let html = `
-                    <table class="expenses-table">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Item</th>
-                                <th>Amount</th>
-                                <th>Paid By</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
-
-                expenses.forEach(expense => {
-                    const badgeClass = `badge-${expense.paid_by.toLowerCase()}`;
-                    html += `
-                        <tr>
-                            <td data-label="Date">${expense.date}</td>
-                            <td data-label="Item">${expense.item}</td>
-                            <td data-label="Amount">$${parseFloat(expense.amount).toFixed(2)}</td>
-                            <td data-label="Paid By"><span class="badge ${badgeClass}">${expense.paid_by}</span></td>
-                            <td data-label="Action">
-                                <button class="delete-btn" onclick="deleteExpense(${expense.id})">Delete</button>
-                            </td>
-                        </tr>
-                    `;
-                });
-
-                html += `
-                        </tbody>
-                    </table>
-                `;
-
-                container.innerHTML = html;
+                allExpenses = await response.json();
+                renderExpensesPage();
             } catch (error) {
                 document.getElementById('expensesList').innerHTML = `
                     <div class="empty-state">
@@ -553,6 +640,102 @@
                     </div>
                 `;
             }
+        }
+
+        function getFilteredExpenses() {
+            const payerFilter = document.getElementById('payerFilter').value;
+
+            if (payerFilter === 'All') {
+                return allExpenses;
+            }
+
+            return allExpenses.filter(expense => expense.paid_by === payerFilter);
+        }
+
+        function renderExpensesPage() {
+            const container = document.getElementById('expensesList');
+            const filteredExpenses = getFilteredExpenses();
+            const pageSize = parseInt(document.getElementById('pageSize').value, 10);
+            const totalPages = Math.max(1, Math.ceil(filteredExpenses.length / pageSize));
+
+            currentPage = Math.min(currentPage, totalPages);
+
+            if (filteredExpenses.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div style="font-size: 4rem;">📝</div>
+                        <h3>No matching expenses</h3>
+                        <p>Try a different payer filter or add a new expense.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const startIndex = (currentPage - 1) * pageSize;
+            const pageExpenses = filteredExpenses.slice(startIndex, startIndex + pageSize);
+            const firstVisible = startIndex + 1;
+            const lastVisible = startIndex + pageExpenses.length;
+
+            let html = `
+                <p class="expense-summary">
+                    Showing ${firstVisible}-${lastVisible} of ${filteredExpenses.length} expenses
+                </p>
+                <table class="expenses-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Item</th>
+                            <th>Amount</th>
+                            <th>Paid By</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            pageExpenses.forEach(expense => {
+                const badgeClass = `badge-${expense.paid_by.toLowerCase()}`;
+                html += `
+                    <tr>
+                        <td data-label="Date">${escapeHtml(expense.date)}</td>
+                        <td data-label="Item">${escapeHtml(expense.item)}</td>
+                        <td data-label="Amount">$${parseFloat(expense.amount).toFixed(2)}</td>
+                        <td data-label="Paid By"><span class="badge ${badgeClass}">${escapeHtml(expense.paid_by)}</span></td>
+                        <td data-label="Action">
+                            <button class="delete-btn" onclick="deleteExpense(${expense.id})">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+                <div class="pagination">
+                    <button class="pagination-btn" id="prevPage" onclick="changePage(-1)" ${currentPage === 1 ? 'disabled' : ''}>
+                        Previous
+                    </button>
+                    <div class="page-status">Page ${currentPage} of ${totalPages}</div>
+                    <button class="pagination-btn" id="nextPage" onclick="changePage(1)" ${currentPage === totalPages ? 'disabled' : ''}>
+                        Next
+                    </button>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function changePage(direction) {
+            const pageSize = parseInt(document.getElementById('pageSize').value, 10);
+            const totalPages = Math.max(1, Math.ceil(getFilteredExpenses().length / pageSize));
+            currentPage = Math.min(Math.max(currentPage + direction, 1), totalPages);
+            renderExpensesPage();
+        }
+
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value;
+            return div.innerHTML;
         }
 
         // Delete expense
