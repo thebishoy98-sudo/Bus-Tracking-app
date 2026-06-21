@@ -6,7 +6,7 @@
 
 import { pathToFileURL } from 'node:url';
 import { store } from './db.js';
-import { config } from './config.js';
+import { config as defaultConfig } from './config.js';
 import { GoogleVoiceSession } from './google-voice/session.js';
 import { browserReader, browserAttachmentFetcher, pollInbox } from './google-voice/inbox.js';
 import { browserComposer, GoogleVoiceSender } from './google-voice/sender.js';
@@ -15,11 +15,11 @@ import { processInbound } from './processor.js';
 
 let sharedSession;
 export function getSession() {
-  if (!sharedSession) sharedSession = new GoogleVoiceSession({ store, config });
+  if (!sharedSession) sharedSession = new GoogleVoiceSession({ store, config: defaultConfig });
   return sharedSession;
 }
 
-export async function runCycle({ session = getSession() } = {}) {
+export async function runCycle({ session = getSession(), config = defaultConfig } = {}) {
   const state = await session.ensureReady();
 
   let polled = { loggedOut: state !== 'ready', added: 0, conversations: 0 };

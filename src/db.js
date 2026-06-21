@@ -188,6 +188,11 @@ function makeStore(db) {
     inById: db.prepare('SELECT * FROM inbound_messages WHERE id = ?'),
     inNew: db.prepare(`SELECT * FROM inbound_messages WHERE status = 'new' ORDER BY sent_at ASC, id ASC`),
     inByConversation: db.prepare('SELECT * FROM inbound_messages WHERE conversation_id = ? ORDER BY sent_at ASC, id ASC'),
+    inRecent: db.prepare(`
+      SELECT im.*, c.display_name AS display_name, c.phone_number AS conv_phone
+      FROM inbound_messages im LEFT JOIN conversations c ON c.id = im.conversation_id
+      ORDER BY im.id DESC LIMIT ?
+    `),
     inUpdate: db.prepare(`
       UPDATE inbound_messages SET
         status = COALESCE(@status, status),
@@ -354,6 +359,9 @@ function makeStore(db) {
     getInboundById: (id) => stmts.inById.get(id),
     getNewInbound: () => stmts.inNew.all(),
     getInboundForConversation: (convId) => stmts.inByConversation.all(convId),
+    getRecentInbound: (limit = 40) => stmts.inRecent.all(limit).map((m) => ({
+      ...m, attachments: stmts.attForMessage.all(m.id),
+    })),
     updateInboundMessage: (id, fields = {}) => stmts.inUpdate.run({
       id, status: null, extracted: null, error: null, ...fields,
     }),

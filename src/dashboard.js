@@ -1,188 +1,206 @@
-import { config } from './config.js';
-import { formatLocal } from './time.js';
+import path from 'node:path';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;');
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 const STATUS = {
-  scheduled:              { label: 'Booked',       cls: 'ok' },
-  awaiting_clarification: { label: 'Needs reply',  cls: 'wait' },
-  pending:                { label: 'In queue',     cls: 'queue' },
-  failed:                 { label: 'Failed',       cls: 'fail' },
-  ignored:                { label: 'Not a booking', cls: 'muted' },
+  scheduled:      { label: 'Booked', cls: 'ok' },
+  awaiting_owner: { label: 'Needs reply', cls: 'wait' },
+  processed:      { label: 'Processed', cls: 'queue' },
+  new:            { label: 'In queue', cls: 'queue' },
+  failed:         { label: 'Failed', cls: 'fail' },
+  ignored:        { label: 'Not a booking', cls: 'muted' },
 };
 
-function whenLabel(m) {
-  try {
-    const ex = m.extracted ? JSON.parse(m.extracted) : null;
-    if (ex?.start_local) return formatLocal(ex.start_local);
-    if (m.status === 'awaiting_clarification') return '—';
-  } catch { /* ignore */ }
-  return '';
-}
+// ── Price-book input validation (used by the server's CRUD routes) ──
+const MONEY_FIELDS = ['labor_low', 'labor_high', 'parts_low', 'parts_high', 'fees'];
 
-function serviceLabel(m) {
-  try {
-    const ex = m.extracted ? JSON.parse(m.extracted) : null;
-    return ex?.service || '';
-  } catch { return ''; }
-}
+export function validatePriceEntry(input = {}) {
+  const errors = [];
+  const value = {};
 
-function row(m) {
-  const s = STATUS[m.status] || STATUS.pending;
-  const who = m.from_name || m.from_number || 'Unknown';
-  const when = whenLabel(m);
-  const svc = serviceLabel(m);
-  const link = m.calendar_link
-    ? `<a class="cal" href="${esc(m.calendar_link)}" target="_blank" rel="noopener">open ↗</a>` : '';
-  return `
-    <tr>
-      <td class="mono time">${esc(new Date(m.received_at).toLocaleString())}</td>
-      <td class="who">${esc(who)}</td>
-      <td>${esc(svc) || '<span class="dim">—</span>'}</td>
-      <td class="mono">${esc(when) || '<span class="dim">—</span>'}</td>
-      <td><span class="chip ${s.cls}">${s.label}</span></td>
-      <td class="msg">${esc(m.body || '').slice(0, 120)}</td>
-      <td>${link}</td>
-    </tr>`;
-}
+  const service = String(input.service ?? '').trim();
+  if (!service) errors.push('service is required');
+  value.service = service;
 
-function clarificationCard(m) {
-  return `
-    <div class="ask">
-      <div class="ask-q">${esc(m.clarification_question || '')}</div>
-      <div class="ask-meta">
-        <span>from <b>${esc(m.from_name || m.from_number || 'unknown')}</b></span>
-        <span class="dim">“${esc((m.body || '').slice(0, 100))}”</span>
-      </div>
-    </div>`;
-}
-
-export function renderDashboard(counts, messages) {
-  const awaiting = messages.filter((m) => m.status === 'awaiting_clarification');
-
-  const askBlock = awaiting.length ? `
-    <section class="panel accent">
-      <h2>Waiting on you <span class="count">${awaiting.length}</span></h2>
-      <p class="hint">Reply to the message on your owner line (${esc(config.ownerNumber)}) with the date &amp; time.</p>
-      ${awaiting.map(clarificationCard).join('')}
-    </section>` : '';
-
-  const stat = (label, n, cls = '') =>
-    `<div class="stat ${cls}"><span class="n mono">${n}</span><span class="l">${label}</span></div>`;
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="30">
-<title>${esc(config.shopName)} — Service Desk</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --bg:#15171a; --panel:#1e2125; --line:#2c3036; --ink:#ECEAE4;
-    --dim:#8b9099; --accent:#F2C200; --ok:#54c08a; --fail:#e36a6a; --blue:#6aa3e3;
+  for (const field of MONEY_FIELDS) {
+    const raw = input[field];
+    if (raw === undefined || raw === '' || raw === null) { value[field] = null; continue; }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) errors.push(`${field} must be a number`);
+    else if (n < 0) errors.push(`${field} cannot be negative`);
+    else value[field] = n;
   }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    line-height:1.5;}
-  .mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
-  header{border-bottom:1px solid var(--line);padding:22px 26px;display:flex;
-    align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
-    background:linear-gradient(180deg,#1b1e22,#15171a);}
-  .brand{display:flex;align-items:center;gap:14px}
-  .tag{font-family:"Oswald",sans-serif;font-weight:700;letter-spacing:.14em;
-    text-transform:uppercase;font-size:13px;color:#0e0f11;background:var(--accent);
-    padding:4px 9px;border-radius:3px;}
-  h1{font-family:"Oswald",sans-serif;font-weight:600;letter-spacing:.02em;
-    font-size:26px;margin:0;text-transform:uppercase}
-  .sub{color:var(--dim);font-size:13px;margin-top:2px}
-  form.scan{margin:0}
-  button{font-family:"Oswald",sans-serif;letter-spacing:.1em;text-transform:uppercase;
-    font-weight:600;font-size:13px;background:transparent;color:var(--ink);
-    border:1px solid var(--line);padding:10px 16px;border-radius:4px;cursor:pointer}
-  button:hover{border-color:var(--accent);color:var(--accent)}
-  main{padding:26px;max-width:1100px;margin:0 auto}
-  .stats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:22px}
-  .stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;
-    padding:14px 18px;min-width:104px;display:flex;flex-direction:column;gap:2px}
-  .stat .n{font-size:26px;font-weight:600}
-  .stat .l{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
-  .stat.ok .n{color:var(--ok)} .stat.wait .n{color:var(--accent)} .stat.fail .n{color:var(--fail)}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;
-    padding:18px 20px;margin-bottom:22px}
-  .panel.accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
-  .panel h2{font-family:"Oswald",sans-serif;font-weight:600;letter-spacing:.04em;
-    text-transform:uppercase;font-size:16px;margin:0 0 4px;display:flex;align-items:center;gap:10px}
-  .count{background:var(--accent);color:#0e0f11;border-radius:999px;font-size:12px;
-    padding:1px 9px;font-family:"IBM Plex Mono",monospace}
-  .hint{color:var(--dim);font-size:13px;margin:0 0 12px}
-  .ask{border-top:1px solid var(--line);padding:12px 0}
-  .ask:first-of-type{border-top:none}
-  .ask-q{font-size:15px}
-  .ask-meta{display:flex;gap:12px;flex-wrap:wrap;color:var(--dim);font-size:13px;margin-top:4px}
-  table{width:100%;border-collapse:collapse;font-size:13.5px}
-  th{font-family:"Oswald",sans-serif;text-transform:uppercase;letter-spacing:.08em;
-    font-size:11.5px;color:var(--dim);text-align:left;font-weight:600;
-    padding:0 12px 10px;border-bottom:1px solid var(--line)}
-  td{padding:12px;border-bottom:1px solid var(--line);vertical-align:top}
-  .time{color:var(--dim);white-space:nowrap;font-size:12px}
-  .who{font-weight:600;white-space:nowrap}
-  .msg{color:var(--dim);max-width:260px}
-  .dim{color:var(--dim)}
-  a.cal{color:var(--blue);text-decoration:none;white-space:nowrap}
-  a.cal:hover{text-decoration:underline}
-  .chip{font-family:"Oswald",sans-serif;text-transform:uppercase;letter-spacing:.06em;
-    font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap;
-    border:1px solid var(--line)}
-  .chip.ok{color:var(--ok);border-color:#2e5a45}
-  .chip.wait{color:var(--accent);border-color:#6a5a12;background:#241f0a}
-  .chip.queue{color:var(--blue);border-color:#2c4a6a}
-  .chip.fail{color:var(--fail);border-color:#6a2e2e}
-  .chip.muted{color:var(--dim)}
-  .empty{color:var(--dim);padding:30px 12px;text-align:center}
-  footer{color:var(--dim);font-size:12px;text-align:center;padding:8px 0 30px}
-</style>
-</head>
-<body>
-  <header>
-    <div class="brand">
-      <span class="tag">Bay&nbsp;1</span>
-      <div>
-        <h1>${esc(config.shopName)} · Service Desk</h1>
-        <div class="sub">Texts in → appointments out. Auto-booked by Claude; you only hear from it when it's unsure.</div>
+
+  const dateOk = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d);
+  for (const field of ['effective_from', 'effective_to']) {
+    const raw = String(input[field] ?? '').trim();
+    if (!raw) { value[field] = null; continue; }
+    if (!dateOk(raw)) errors.push(`${field} must be a YYYY-MM-DD date`);
+    else value[field] = raw;
+  }
+
+  value.vehicle_adjustments = input.vehicle_adjustments || null;
+  value.notes = input.notes || null;
+
+  return { ok: errors.length === 0, errors, value };
+}
+
+// ── Rendering ──
+function healthCard(health, observation) {
+  const ok = health.lastScanOk;
+  return `
+    <section class="panel">
+      <h2>Automation status</h2>
+      <div class="grid">
+        <div><span class="k">Browser</span><span class="v ${health.browserState === 'ready' ? 'good' : 'bad'}">${esc(health.browserState)}</span></div>
+        <div><span class="k">Last scan</span><span class="v">${esc(health.lastScanAt || '—')} ${ok ? '✓' : '✗'}</span></div>
+        <div><span class="k">Mode</span><span class="v ${observation ? 'warn' : 'good'}">${observation ? 'OBSERVATION (not sending)' : 'SENDING ENABLED'}</span></div>
+        ${health.lastError ? `<div><span class="k">Last error</span><span class="v bad">${esc(health.lastError)}</span></div>` : ''}
       </div>
-    </div>
-    <form class="scan" method="post" action="/run"><button type="submit">Scan now</button></form>
-  </header>
-  <main>
-    <div class="stats">
-      ${stat('Booked', counts.scheduled, 'ok')}
-      ${stat('Needs reply', counts.awaiting_clarification, 'wait')}
-      ${stat('In queue', counts.pending)}
-      ${stat('Failed', counts.failed, 'fail')}
-      ${stat('Not bookings', counts.ignored)}
-    </div>
+      <form method="post" action="/observation" class="inline">
+        <input type="hidden" name="mode" value="${observation ? 'off' : 'on'}">
+        <button type="submit">${observation ? 'Enable sending' : 'Switch to observation'}</button>
+      </form>
+      <form method="post" action="/run" class="inline"><button type="submit">Scan now</button></form>
+    </section>`;
+}
 
-    ${askBlock}
+function approvalsCard(pending) {
+  const items = (pending || []).filter((a) => a.kind === 'pricing_approval');
+  if (!items.length) return '';
+  return `
+    <section class="panel accent">
+      <h2>Pending price approvals <span class="count">${items.length}</span></h2>
+      ${items.map((a) => {
+    let p = {}; try { p = JSON.parse(a.payload) || {}; } catch { /* ignore */ }
+    return `<div class="ask"><b>${esc(p.service || 'service')}</b> — ${p.low == null ? 'no price' : `$${esc(p.low)}–$${esc(p.high)}`} (confidence ${esc(p.confidence || '?')}). Reply on your owner line: APPROVE / EDIT / NOQUOTE.</div>`;
+  }).join('')}
+    </section>`;
+}
 
+function failedSendsCard(failed) {
+  if (!failed || !failed.length) return '';
+  return `
+    <section class="panel">
+      <h2>Failed / suspended sends <span class="count">${failed.length}</span></h2>
+      <table><thead><tr><th>To</th><th>Status</th><th>Error</th><th></th></tr></thead><tbody>
+      ${failed.map((f) => `<tr>
+        <td class="mono">${esc(f.recipient_number)}</td>
+        <td><span class="chip fail">${esc(f.status)}</span></td>
+        <td class="msg">${esc(f.last_error || '')}</td>
+        <td><form method="post" action="/outbox/${esc(f.id)}/retry"><button type="submit">Retry</button></form></td>
+      </tr>`).join('')}
+      </tbody></table>
+    </section>`;
+}
+
+function thumbs(attachments) {
+  return (attachments || [])
+    .filter((a) => a.status === 'stored' && a.file_path)
+    .map((a) => `<a href="/media/${esc(path.basename(a.file_path))}" target="_blank" rel="noopener"><img class="thumb" src="/media/${esc(path.basename(a.file_path))}" alt="attachment"></a>`)
+    .join('');
+}
+
+function messagesCard(messages) {
+  if (!messages || !messages.length) {
+    return `<section class="panel"><h2>Recent messages</h2><div class="empty">No messages yet.</div></section>`;
+  }
+  const rows = messages.map((m) => {
+    const s = STATUS[m.status] || STATUS.new;
+    return `<tr>
+      <td class="mono time">${esc(m.sent_at || '')}</td>
+      <td class="who">${esc(m.display_name || m.sender_number || 'Unknown')}</td>
+      <td class="msg">${esc((m.body || '').slice(0, 160))}</td>
+      <td>${thumbs(m.attachments)}</td>
+      <td><span class="chip ${s.cls}">${s.label}</span></td>
+    </tr>`;
+  }).join('');
+  return `
     <section class="panel">
       <h2>Recent messages</h2>
-      ${messages.length ? `
-      <table>
-        <thead><tr>
-          <th>Received</th><th>From</th><th>Service</th><th>When</th><th>Status</th><th>Message</th><th></th>
-        </tr></thead>
-        <tbody>${messages.map(row).join('')}</tbody>
-      </table>` : `<div class="empty">No messages yet. Text your Google Voice number to test it.</div>`}
-    </section>
-  </main>
-  <footer>Auto-refreshes every 30s · timezone ${esc(config.timezone)}</footer>
-</body>
-</html>`;
+      <table><thead><tr><th>When</th><th>From</th><th>Message</th><th>Images</th><th>Status</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </section>`;
 }
+
+function priceBookCard(priceBook) {
+  const rows = (priceBook || []).map((p) => `<tr>
+    <td>${esc(p.service)}</td>
+    <td class="mono">${esc(p.labor_low)}–${esc(p.labor_high)}</td>
+    <td class="mono">${esc(p.parts_low)}–${esc(p.parts_high)}</td>
+    <td class="mono">${esc(p.fees)}</td>
+    <td class="mono">${esc(p.effective_from || '—')}→${esc(p.effective_to || 'now')}</td>
+    <td><form method="post" action="/price/${esc(p.id)}/delete" onsubmit="return confirm('Delete this entry?')"><button type="submit">Delete</button></form></td>
+  </tr>`).join('');
+  return `
+    <section class="panel">
+      <h2>Price book</h2>
+      <table><thead><tr><th>Service</th><th>Labor</th><th>Parts</th><th>Fees</th><th>Effective</th><th></th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="6" class="empty">No price-book entries yet.</td></tr>'}</tbody></table>
+      <form method="post" action="/price" class="pricefrm">
+        <input name="service" placeholder="service" required>
+        <input name="labor_low" placeholder="labor low" inputmode="decimal">
+        <input name="labor_high" placeholder="labor high" inputmode="decimal">
+        <input name="parts_low" placeholder="parts low" inputmode="decimal">
+        <input name="parts_high" placeholder="parts high" inputmode="decimal">
+        <input name="fees" placeholder="fees" inputmode="decimal">
+        <input name="effective_from" placeholder="YYYY-MM-DD">
+        <button type="submit">Add entry</button>
+      </form>
+    </section>`;
+}
+
+export function renderDashboard(data = {}) {
+  const {
+    shopName = 'Shop', timezone = '', observation = true,
+    health = {}, pendingApprovals = [], failedSends = [], messages = [], priceBook = [],
+  } = data;
+
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(shopName)} — Service Desk</title>
+<style>
+  :root{--bg:#15171a;--panel:#1e2125;--line:#2c3036;--ink:#ECEAE4;--dim:#8b9099;--accent:#F2C200;--ok:#54c08a;--fail:#e36a6a;--blue:#6aa3e3;}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5}
+  .mono{font-family:ui-monospace,Menlo,monospace}
+  header{border-bottom:1px solid var(--line);padding:18px 24px}
+  h1{margin:0;font-size:22px} .sub{color:var(--dim);font-size:13px}
+  main{padding:22px;max-width:1100px;margin:0 auto}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin-bottom:18px}
+  .panel.accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:.05em;margin:0 0 12px}
+  .count{background:var(--accent);color:#0e0f11;border-radius:999px;font-size:12px;padding:1px 9px}
+  .grid{display:flex;gap:22px;flex-wrap:wrap;margin-bottom:12px}
+  .grid .k{display:block;color:var(--dim);font-size:11px;text-transform:uppercase}
+  .grid .v{font-weight:600} .good{color:var(--ok)} .bad{color:var(--fail)} .warn{color:var(--accent)}
+  button{font-size:13px;background:transparent;color:var(--ink);border:1px solid var(--line);padding:8px 14px;border-radius:4px;cursor:pointer}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  form.inline{display:inline-block;margin-right:8px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--dim);font-size:11px;text-transform:uppercase;padding:0 10px 8px;border-bottom:1px solid var(--line)}
+  td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+  .who{font-weight:600;white-space:nowrap} .msg{color:var(--dim);max-width:320px} .time{color:var(--dim);white-space:nowrap;font-size:12px}
+  .chip{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line)}
+  .chip.ok{color:var(--ok)} .chip.wait{color:var(--accent)} .chip.queue{color:var(--blue)} .chip.fail{color:var(--fail)} .chip.muted{color:var(--dim)}
+  .thumb{height:42px;width:42px;object-fit:cover;border-radius:4px;border:1px solid var(--line);margin-right:4px}
+  .ask{border-top:1px solid var(--line);padding:8px 0} .ask:first-of-type{border-top:none}
+  .empty{color:var(--dim);text-align:center;padding:20px}
+  .pricefrm{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+  .pricefrm input{background:#15171a;border:1px solid var(--line);color:var(--ink);padding:7px 9px;border-radius:4px}
+</style></head>
+<body>
+  <header><h1>${esc(shopName)} · Service Desk</h1><div class="sub">Google Voice automation · timezone ${esc(timezone)}</div></header>
+  <main>
+    ${healthCard(health, observation)}
+    ${approvalsCard(pendingApprovals)}
+    ${failedSendsCard(failedSends)}
+    ${messagesCard(messages)}
+    ${priceBookCard(priceBook)}
+  </main>
+</body></html>`;
+}
+
+export default { renderDashboard, validatePriceEntry };
