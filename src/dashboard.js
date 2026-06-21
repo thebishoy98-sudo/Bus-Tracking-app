@@ -58,12 +58,14 @@ function healthCard(health, observation) {
         <div><span class="k">Last scan</span><span class="v">${esc(health.lastScanAt || '—')} ${ok ? '✓' : '✗'}</span></div>
         <div><span class="k">Mode</span><span class="v ${observation ? 'warn' : 'good'}">${observation ? 'OBSERVATION (not sending)' : 'SENDING ENABLED'}</span></div>
         ${health.lastError ? `<div><span class="k">Last error</span><span class="v bad">${esc(health.lastError)}</span></div>` : ''}
+        <div><span class="k">Retention</span><span class="v">${esc(health.lastRetentionAt || '—')} ${esc(health.lastRetentionResult || '')}</span></div>
       </div>
       <form method="post" action="/observation" class="inline">
         <input type="hidden" name="mode" value="${observation ? 'off' : 'on'}">
         <button type="submit">${observation ? 'Enable sending' : 'Switch to observation'}</button>
       </form>
       <form method="post" action="/run" class="inline"><button type="submit">Scan now</button></form>
+      <form method="post" action="/retention" class="inline"><button type="submit">Run retention</button></form>
     </section>`;
 }
 

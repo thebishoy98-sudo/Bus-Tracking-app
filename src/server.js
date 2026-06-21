@@ -6,6 +6,7 @@ import { runCycle } from './run-once.js';
 import { renderDashboard, validatePriceEntry } from './dashboard.js';
 import { requireAuth } from './auth.js';
 import { resolveMediaPath } from './media.js';
+import { runRetention } from './retention.js';
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
@@ -106,6 +107,12 @@ app.post('/outbox/:id/retry', (req, res) => {
   res.redirect('/');
 });
 
+// Manual retention sweep.
+app.post('/retention', (req, res) => {
+  try { runRetention({ store, config }); } catch (err) { log('retention error:', err.message); }
+  res.redirect('/');
+});
+
 // ── Start server + schedule the recurring cycle ──
 app.listen(config.port, () => {
   log(`${config.shopName} appointment bot listening on http://localhost:${config.port}`);
@@ -114,5 +121,15 @@ app.listen(config.port, () => {
 });
 
 cron.schedule(config.cronSchedule, () => { safeCycle('scheduled scan'); }, { timezone: config.timezone });
+
+// Retention runs on its own daily schedule, independent of message polling.
+cron.schedule('17 3 * * *', () => {
+  try {
+    const r = runRetention({ store, config });
+    log('retention:', r.summary);
+  } catch (err) {
+    log('retention error:', err.message);
+  }
+}, { timezone: config.timezone });
 
 setTimeout(() => { safeCycle('startup scan'); }, 3000);
