@@ -14,15 +14,21 @@ export const URLS = {
 
 // Signals that we are logged out or facing an auth challenge rather than the inbox.
 export const AUTH = {
-  // Any of these being present means we are NOT on the messaging surface.
+  // A 2-step verification / security challenge surface (checked first).
+  challengeIndicators: [
+    'div[data-challenge-ui]',
+    'form[action*="challenge"]',
+    'samp#totpPin',
+    '[data-challenge-type]',
+  ],
+  // A sign-in form: we are logged out.
   loginIndicators: [
     'input[type="email"]',
     'input[type="password"]',
     '#identifierId',
     'form[action*="signin"]',
-    'div[data-challenge-ui]',
   ],
-  // Presence of this signals a healthy, logged-in messaging view.
+  // Presence of any signals a healthy, logged-in messaging view.
   readyIndicators: [
     'gv-thread-list',
     '[gv-test-id="thread-list"]',

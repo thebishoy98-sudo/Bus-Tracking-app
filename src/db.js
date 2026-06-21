@@ -450,6 +450,27 @@ function makeStore(db) {
       for (const { key, value } of stmts.healthAll.all()) out[key] = value;
       return out;
     },
+    setHealthMany: (obj) => {
+      const tx = db.transaction((entries) => {
+        for (const [k, v] of entries) stmts.healthSet.run(k, v == null ? null : String(v));
+      });
+      tx(Object.entries(obj));
+    },
+    // Structured view of automation health for the dashboard.
+    healthSnapshot: () => {
+      const h = {};
+      for (const { key, value } of stmts.healthAll.all()) h[key] = value;
+      return {
+        browserState: h.browser_state || 'unknown',
+        lastStateAt: h.last_state_at || null,
+        lastScanAt: h.last_scan_at || null,
+        lastScanOk: h.last_scan_ok === '1',
+        lastError: h.last_error || '',
+        lastScreenshot: h.last_screenshot || '',
+        lastRetentionAt: h.last_retention_at || null,
+        lastRetentionResult: h.last_retention_result || '',
+      };
+    },
   };
 }
 
