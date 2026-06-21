@@ -65,7 +65,7 @@ export function renderDashboard(counts, messages) {
   const askBlock = awaiting.length ? `
     <section class="panel accent">
       <h2>Waiting on you <span class="count">${awaiting.length}</span></h2>
-      <p class="hint">Reply to the text on your phone (${esc(config.ownerPhone())}) with the date &amp; time.</p>
+      <p class="hint">Reply to the message on your owner line (${esc(config.ownerNumber)}) with the date &amp; time.</p>
       ${awaiting.map(clarificationCard).join('')}
     </section>` : '';
 

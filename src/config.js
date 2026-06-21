@@ -56,7 +56,6 @@ export function buildConfig(env = process.env) {
     googleClientSecret: req('GOOGLE_CLIENT_SECRET'),
     googleRedirectUri: opt('GOOGLE_REDIRECT_URI', 'http://localhost:5555'),
     googleTokenJson: opt('GOOGLE_TOKEN_JSON', ''),
-    gmailQuery: opt('GMAIL_QUERY', 'from:txt.voice.google.com newer_than:2d'),
     calendarId: opt('GOOGLE_CALENDAR_ID', 'primary'),
 
     // Owner / messaging

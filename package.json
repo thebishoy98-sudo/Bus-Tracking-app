@@ -22,7 +22,6 @@
     "googleapis": "^144.0.0",
     "node-cron": "^3.0.3",
     "node-html-parser": "^6.1.13",
-    "playwright": "^1.49.1",
-    "twilio": "^5.4.3"
+    "playwright": "^1.49.1"
   }
 }
