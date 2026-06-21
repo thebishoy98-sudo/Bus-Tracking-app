@@ -1,25 +1,13 @@
 import { isOwnerNumber } from './google-voice/normalize.js';
 import { parseApprovalCommand } from './approvals.js';
 import { enqueueOutbound, makeIdempotencyKey } from './google-voice/outbox.js';
+import { formatCustomerEstimate } from './pricing.js';
+
+export { formatCustomerEstimate };
 
 // Decide whether an inbound message is owner input or a customer message.
 export function routeBySender(senderNumber, ownerNumber) {
   return isOwnerNumber(senderNumber, ownerNumber) ? 'owner' : 'customer';
-}
-
-function money(n) {
-  return `$${Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
-}
-
-// Customer-facing estimate text. Deliberately, explicitly non-binding.
-export function formatCustomerEstimate({ low, high, service }) {
-  const svc = service ? ` for ${service}` : '';
-  const range = low === high ? money(low) : `${money(low)}–${money(high)}`;
-  return (
-    `Thanks! Based on what you described, our estimate${svc} is ${range}. ` +
-    `This is an estimate only, not a final or binding quote — the final price may ` +
-    `change after we inspect the vehicle in person.`
-  );
 }
 
 // Queue a private note back to the owner (never to a customer).
@@ -74,6 +62,8 @@ export function handleOwnerReply({ store, config, text }) {
   const body = formatCustomerEstimate({ low, high, service: payload.service });
   const key = makeIdempotencyKey({ recipient: conv.phone_number, kind: 'text', body, tag: `estimate:${pending.id}` });
   enqueueOutbound(store, { recipient: conv.phone_number, body, idempotencyKey: key });
+  // Record the final quoted range so it becomes an accurate historical comparable.
+  store.setOwnerActionPayload(pending.id, JSON.stringify({ ...payload, low, high }));
   store.resolveOwnerAction(pending.id, cmd.type === 'approve' ? 'approved' : 'edited');
 
   return { matched: true, action: cmd.type, low, high };

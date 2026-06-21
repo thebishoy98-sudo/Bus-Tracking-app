@@ -4,7 +4,10 @@ import { createCalendarEvent } from './google.js';
 import { extractAppointment, extractWithClarification } from './claude.js';
 import { routeBySender, handleOwnerReply, enqueueOwnerNote } from './router.js';
 import { enqueueOutbound, makeIdempotencyKey } from './google-voice/outbox.js';
-import { formatLocal } from './time.js';
+import { recommend, formatOwnerRecommendation } from './pricing.js';
+import { explainPricing } from './claude.js';
+import { selectComparables } from './history.js';
+import { formatLocal, todayISO } from './time.js';
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const safeJSON = (s) => { try { return JSON.parse(s); } catch { return null; } };
@@ -33,6 +36,38 @@ function storedImagesFor(store, messageId) {
   return store.getAttachmentsForMessage(messageId)
     .filter((a) => a.status === 'stored' && a.kind === 'image' && a.file_path)
     .map((a) => ({ filePath: a.file_path, mime: a.mime }));
+}
+
+// After booking, build a PRIVATE pricing recommendation for the owner. The
+// customer never receives a price until the owner replies APPROVE / EDIT.
+async function queuePricingRecommendation(m, ex, conv, { store, config }) {
+  const service = ex.service;
+  if (!service || !conv) return;
+  // One pending pricing approval per conversation at a time.
+  if (store.getPendingOwnerActionForConversation('pricing_approval', conv.id)) return;
+
+  const entries = store.getEffectivePriceEntries(todayISO(config.timezone));
+  const comparables = selectComparables(store.getPricedHistory(), { service, limit: 5 });
+  const rec = recommend({ entries, comparables, service, vehicle: ex.vehicle });
+
+  // Best-effort: let Claude explain/refine assumptions (numbers stay deterministic).
+  try {
+    const explained = await explainPricing({ rec, message: { body: m.body }, config });
+    if (explained?.assumptions?.length) rec.assumptions = explained.assumptions;
+    if (explained?.rationale) rec.assumptions = [...(rec.assumptions || []), explained.rationale];
+  } catch { /* keep deterministic recommendation */ }
+
+  store.createOwnerAction({
+    kind: 'pricing_approval',
+    conversation_id: conv.id,
+    customer_message_id: m.id,
+    payload: JSON.stringify({ service: rec.service || service, vehicle: ex.vehicle, low: rec.low, high: rec.high, confidence: rec.confidence }),
+  });
+  enqueueOwnerNote(
+    store, config,
+    formatOwnerRecommendation(rec, { customerName: conv.display_name }),
+    `price:${m.id}`,
+  );
 }
 
 async function processCustomerMessage(m, { store, config }) {
@@ -69,6 +104,7 @@ async function processCustomerMessage(m, { store, config }) {
         `confirm:${m.id}`,
       );
       log(`booked "${event.title}" @ ${ex.start_local}`);
+      await queuePricingRecommendation(m, ex, conv, { store, config });
     } catch (err) {
       log('booking error:', err.message);
       store.updateInboundMessage(m.id, { status: 'failed', error: err.message, extracted: JSON.stringify(ex) });
@@ -126,6 +162,7 @@ async function handleClarificationAnswer(action, answerText, { store, config }) 
       enqueueCustomerMessage(store, conv,
         `You're booked: ${event.title} — ${formatLocal(ex.start_local)}.`, `confirm:${m.id}`);
       enqueueOwnerNote(store, config, `Booked: ${event.title} — ${formatLocal(ex.start_local)}.`, `booked:${m.id}`);
+      await queuePricingRecommendation(m, ex, conv, { store, config });
       return { matched: true, booked: true };
     } catch (err) {
       store.updateInboundMessage(m.id, { status: 'failed', error: err.message, extracted: JSON.stringify(ex) });

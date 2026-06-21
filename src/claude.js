@@ -140,6 +140,51 @@ export async function extractAppointment(message, { images = [], config = defaul
   return callTool(buildExtractionRequest({ message, images, config }), client);
 }
 
+// Tool to let Claude explain and lightly refine a deterministic price baseline.
+// The numeric baseline is computed in pricing.js BEFORE this is called; Claude
+// only explains assumptions and may tighten the range — it never invents prices.
+export const PRICE_TOOL = {
+  name: 'explain_price',
+  description:
+    'Explain a non-binding auto-repair price estimate. Stay within or very close to the provided baseline range. ' +
+    'Do not invent prices; surface assumptions and uncertainty honestly.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      low: { type: ['number', 'null'], description: 'Refined low end (stay near the baseline).' },
+      high: { type: ['number', 'null'], description: 'Refined high end (stay near the baseline).' },
+      assumptions: { type: 'array', items: { type: 'string' }, description: 'Plain assumptions behind the estimate.' },
+      rationale: { type: ['string', 'null'], description: 'One short sentence explaining the estimate to the owner.' },
+    },
+    required: [],
+  },
+};
+
+export function buildPricingRequest({ rec, message, config = defaultConfig }) {
+  const text =
+    `Provide a non-binding price explanation for an auto-repair job.\n` +
+    `Service: ${rec.service || 'unknown'}\n` +
+    `Customer said: "${message?.body || ''}"\n` +
+    `Deterministic baseline range: ${rec.low}–${rec.high} (confidence ${rec.confidence}).\n` +
+    `Baseline assumptions: ${(rec.assumptions || []).join(' ')}\n` +
+    `Comparable past jobs: ${(rec.comparisons || []).map((c) => `${c.service} ${c.low}-${c.high}`).join('; ') || 'none'}\n\n` +
+    `Stay within or very close to the baseline. Do not invent new prices.`;
+  return {
+    model: config.anthropicModel,
+    max_tokens: 512,
+    system: `You explain auto-repair price estimates conservatively for ${config.shopName}. Estimates are never binding.`,
+    tools: [PRICE_TOOL],
+    tool_choice: { type: 'tool', name: 'explain_price' },
+    messages: [{ role: 'user', content: [{ type: 'text', text }] }],
+  };
+}
+
+// Best-effort explanation. Callers should fall back to the deterministic
+// recommendation if this throws.
+export async function explainPricing({ rec, message, config = defaultConfig, client } = {}) {
+  return callTool(buildPricingRequest({ rec, message, config }), client);
+}
+
 // Second pass: re-extract after the owner answers a clarification question.
 export async function extractWithClarification(message, question, answer, { images = [], config = defaultConfig, client } = {}) {
   const extra =

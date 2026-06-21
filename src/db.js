@@ -249,6 +249,13 @@ function makeStore(db) {
     actById: db.prepare('SELECT * FROM pending_owner_actions WHERE id = ?'),
     actResolve: db.prepare(`UPDATE pending_owner_actions SET status = ?, resolved_at = datetime('now') WHERE id = ?`),
     actAllPending: db.prepare(`SELECT * FROM pending_owner_actions WHERE status = 'pending' ORDER BY id ASC`),
+    actSetPayload: db.prepare(`UPDATE pending_owner_actions SET payload = ? WHERE id = ?`),
+    actPendingForConv: db.prepare(`SELECT * FROM pending_owner_actions WHERE status = 'pending' AND kind = ? AND conversation_id = ? LIMIT 1`),
+    actPricedHistory: db.prepare(`
+      SELECT payload, resolved_at FROM pending_owner_actions
+      WHERE kind = 'pricing_approval' AND status IN ('approved', 'edited')
+      ORDER BY resolved_at DESC LIMIT 200
+    `),
 
     // price book
     priceInsert: db.prepare(`
@@ -415,6 +422,13 @@ function makeStore(db) {
     hasPendingOwnerAction: () => stmts.actCountPending.get().n > 0,
     getOwnerActionById: (id) => stmts.actById.get(id),
     resolveOwnerAction: (id, status) => stmts.actResolve.run(status, id),
+    setOwnerActionPayload: (id, payload) => stmts.actSetPayload.run(payload, id),
+    getPendingOwnerActionForConversation: (kind, convId) => stmts.actPendingForConv.get(kind, convId),
+    getPricedHistory: () => stmts.actPricedHistory.all().map((r) => {
+      let p = {};
+      try { p = JSON.parse(r.payload) || {}; } catch { /* ignore */ }
+      return { service: p.service, vehicle: p.vehicle, low: p.low, high: p.high, date: r.resolved_at };
+    }),
 
     // ── price book ──
     insertPriceEntry: (row) => stmts.priceInsert.run({
