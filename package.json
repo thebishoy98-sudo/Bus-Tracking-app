@@ -1,0 +1,23 @@
+{
+  "name": "gv-appointment-bot",
+  "version": "1.0.0",
+  "description": "Reads Google Voice texts (via Gmail forwarding), uses Claude to extract auto-repair appointment details, books them on Google Calendar, and texts you to clarify when a message is ambiguous.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "auth": "node scripts/setup-google-auth.js",
+    "run-once": "node src/run-once.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "better-sqlite3": "^11.8.1",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "googleapis": "^144.0.0",
+    "node-cron": "^3.0.3",
+    "twilio": "^5.4.3"
+  }
+}

@@ -1,0 +1,73 @@
+# Render Blueprint — deploys this app as a single always-on web service.
+#
+# How to use:
+#   1. Push this repo to GitHub/GitLab/Bitbucket (private is fine).
+#   2. In Render: New ▸ Blueprint ▸ connect the repo.
+#   3. Render reads this file and prompts you for each "sync: false" secret.
+#   4. Deploy. (See README ▸ "Deploy to Render" for the full walkthrough,
+#      including how to get GOOGLE_TOKEN_JSON.)
+#
+# Note: this app must stay running to scan on schedule, so it uses a paid
+# "starter" instance (free web services sleep after ~15 min and stop scanning).
+# The persistent disk keeps the SQLite database across deploys so appointments
+# are never re-booked. Both require a paid instance.
+
+services:
+  - type: web
+    name: gv-appointment-bot
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      # ── Secrets: Render prompts you for these on first deploy ──
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      # Paste the entire contents of the google-token.json you generate
+      # locally with `npm run auth` (one line is fine).
+      - key: GOOGLE_TOKEN_JSON
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+      - key: OWNER_PHONE_NUMBER
+        sync: false
+      - key: SHOP_NAME
+        sync: false
+      - key: SHOP_TIMEZONE
+        sync: false
+
+      # ── Non-secret defaults: edit here or in the dashboard ──
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-6
+      - key: GMAIL_QUERY
+        value: from:txt.voice.google.com newer_than:2d
+      - key: GOOGLE_CALENDAR_ID
+        value: primary
+      - key: DEFAULT_APPOINTMENT_MINUTES
+        value: "60"
+      - key: CRON_SCHEDULE
+        value: "*/5 * * * *"
+      - key: MAX_CLARIFICATION_ROUNDS
+        value: "3"
+      - key: DB_PATH
+        value: /data/data.db
+      - key: NODE_ENV
+        value: production
+      # Set this to your service's https URL after the first deploy
+      # (e.g. https://gv-appointment-bot.onrender.com) to verify Twilio
+      # webhook signatures. Leave blank until you know the URL.
+      - key: PUBLIC_URL
+        value: ""
