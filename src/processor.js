@@ -28,12 +28,23 @@ function enqueueCustomerMessage(store, conv, body, tag) {
   return enqueueOutbound(store, { recipient: conv.phone_number, body, idempotencyKey: key });
 }
 
+// Validated, retained image files attached to a message, for Claude vision.
+function storedImagesFor(store, messageId) {
+  return store.getAttachmentsForMessage(messageId)
+    .filter((a) => a.status === 'stored' && a.kind === 'image' && a.file_path)
+    .map((a) => ({ filePath: a.file_path, mime: a.mime }));
+}
+
 async function processCustomerMessage(m, { store, config }) {
   const conv = store.getConversationById(m.conversation_id);
+  const images = storedImagesFor(store, m.id);
   let ex = m.extracted ? safeJSON(m.extracted) : null;
   if (!ex) {
     try {
-      ex = await extractAppointment({ from_name: conv?.display_name, from_number: m.sender_number, body: m.body });
+      ex = await extractAppointment(
+        { from_name: conv?.display_name, from_number: m.sender_number, body: m.body },
+        { images, config },
+      );
       store.updateInboundMessage(m.id, { extracted: JSON.stringify(ex) });
     } catch (err) {
       log('extract error:', err.message);
