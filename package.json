@@ -1,7 +1,7 @@
 {
   "name": "gv-appointment-bot",
   "version": "1.0.0",
-  "description": "Reads Google Voice texts (via Gmail forwarding), uses Claude to extract auto-repair appointment details, books them on Google Calendar, and texts you to clarify when a message is ambiguous.",
+  "description": "Reads Google Voice texts and images via a persistent Playwright browser session, uses Claude to extract auto-repair appointment details and recommend owner-approved pricing, books them on Google Calendar, and replies through Google Voice.",
   "type": "module",
   "engines": {
     "node": ">=18"
@@ -9,15 +9,19 @@
   "scripts": {
     "start": "node src/server.js",
     "auth": "node scripts/setup-google-auth.js",
-    "run-once": "node src/run-once.js"
+    "run-once": "node src/run-once.js",
+    "seed-profile": "node scripts/seed-google-voice-profile.js",
+    "test": "node --test",
+    "lint": "node --check src/config.js && node scripts/lint.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^12.11.1",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "googleapis": "^144.0.0",
     "node-cron": "^3.0.3",
+    "playwright": "^1.49.1",
     "twilio": "^5.4.3"
   }
 }
