@@ -172,6 +172,24 @@ dashboard credentials.
 
 ---
 
+## Verifying before you enable sending
+
+Run the automated gate and the staged live checklist in
+[`docs/google-voice-live-test-checklist.md`](docs/google-voice-live-test-checklist.md):
+
+```bash
+npm ci && npm test && npm run lint
+docker build -t gv-appointment-bot .
+docker run --rm gv-appointment-bot node --test
+```
+
+Then deploy in observation mode and walk the checklist (login health,
+conversation parsing, deduplication, owner routing, images, recipient
+selection). Only after those pass should you set `OBSERVATION_MODE=false` and
+validate the controlled-send flows.
+
+---
+
 ## Notes & caveats
 
 - **Fragility:** Google Voice selectors live in `src/google-voice/selectors.js`.
