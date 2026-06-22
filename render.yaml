@@ -1,29 +1,31 @@
-# Render Blueprint — deploys this app as a single always-on web service.
+# Render Blueprint — deploys this app as a single always-on Docker web service.
 #
 # How to use:
-#   1. Push this repo to GitHub/GitLab/Bitbucket (private is fine).
-#   2. In Render: New ▸ Blueprint ▸ connect the repo.
-#   3. Render reads this file and prompts you for each "sync: false" secret.
-#   4. Deploy. (See README ▸ "Deploy to Render" for the full walkthrough,
-#      including how to get GOOGLE_TOKEN_JSON.)
+#   1. Seed the Google Voice browser profile locally (npm run seed-profile) and
+#      copy the profile directory onto the service's /data disk, OR sign in once
+#      from a Render shell session with a forwarded display. See README.
+#   2. Push this repo to GitHub/GitLab/Bitbucket (private is fine).
+#   3. In Render: New ▸ Blueprint ▸ connect the repo.
+#   4. Render reads this file and prompts you for each "sync: false" secret.
+#   5. Deploy. It starts in OBSERVATION mode (no sending). Only set
+#      OBSERVATION_MODE=false after the live smoke test passes (see README +
+#      docs/google-voice-live-test-checklist.md).
 #
-# Note: this app must stay running to scan on schedule, so it uses a paid
-# "starter" instance (free web services sleep after ~15 min and stop scanning).
-# The persistent disk keeps the SQLite database across deploys so appointments
-# are never re-booked. Both require a paid instance.
+# A persistent disk holds the SQLite database, the Chromium profile, downloaded
+# media, and diagnostic screenshots. Chromium needs more memory than the free
+# tier, so this uses a paid instance.
 
 services:
   - type: web
     name: gv-appointment-bot
-    runtime: node
-    plan: starter
-    buildCommand: npm install
-    startCommand: npm start
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: standard
     healthCheckPath: /healthz
     disk:
       name: data
       mountPath: /data
-      sizeGB: 1
+      sizeGB: 2
     envVars:
       # ── Secrets: Render prompts you for these on first deploy ──
       - key: ANTHROPIC_API_KEY
@@ -32,17 +34,18 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-      # Paste the entire contents of the google-token.json you generate
-      # locally with `npm run auth` (one line is fine).
+      # Paste the entire contents of the google-token.json you generate locally
+      # with `npm run auth` (Calendar access). One line is fine.
       - key: GOOGLE_TOKEN_JSON
         sync: false
-      - key: TWILIO_ACCOUNT_SID
-        sync: false
-      - key: TWILIO_AUTH_TOKEN
-        sync: false
-      - key: TWILIO_FROM_NUMBER
-        sync: false
+      # The shop owner's Google Voice line (approvals/clarifications).
       - key: OWNER_PHONE_NUMBER
+        sync: false
+      # Dashboard login. Pick a strong password — the dashboard is locked
+      # without it (no password = no access).
+      - key: DASHBOARD_USER
+        sync: false
+      - key: DASHBOARD_PASSWORD
         sync: false
       - key: SHOP_NAME
         sync: false
@@ -52,22 +55,30 @@ services:
       # ── Non-secret defaults: edit here or in the dashboard ──
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-4-6
-      - key: GMAIL_QUERY
-        value: from:txt.voice.google.com newer_than:2d
       - key: GOOGLE_CALENDAR_ID
         value: primary
       - key: DEFAULT_APPOINTMENT_MINUTES
         value: "60"
       - key: CRON_SCHEDULE
         value: "*/5 * * * *"
-      - key: MAX_CLARIFICATION_ROUNDS
-        value: "3"
+      # START IN OBSERVATION MODE. Flip to "false" only after validating live
+      # inbox parsing, recipient selection, dedup, images, and owner routing.
+      - key: OBSERVATION_MODE
+        value: "true"
+      - key: POLL_INTERVAL_SECONDS
+        value: "60"
+      - key: SEND_RATE_PER_MINUTE
+        value: "6"
+      - key: MEDIA_RETENTION_DAYS
+        value: "90"
+      # Persistent-disk paths (also set in the Dockerfile).
       - key: DB_PATH
         value: /data/data.db
+      - key: GV_PROFILE_PATH
+        value: /data/google-voice-profile
+      - key: MEDIA_PATH
+        value: /data/media
+      - key: DIAGNOSTICS_PATH
+        value: /data/diagnostics
       - key: NODE_ENV
         value: production
-      # Set this to your service's https URL after the first deploy
-      # (e.g. https://gv-appointment-bot.onrender.com) to verify Twilio
-      # webhook signatures. Leave blank until you know the URL.
-      - key: PUBLIC_URL
-        value: ""

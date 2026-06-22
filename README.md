@@ -1,88 +1,124 @@
-# Google Voice → Calendar appointment bot (Claude-powered)
+# Google Voice appointment bot (Claude-powered)
 
-Customers text your **Google Voice** number to book car repairs. This app:
+Customers text your **Google Voice** number to book car repairs. This app drives
+a persistent **Playwright/Chromium** session signed in to Google Voice to read
+and (once enabled) reply to messages. It:
 
-1. **Scans** new texts on a schedule (Google Voice forwards them to Gmail; the app reads Gmail).
-2. Uses **Claude** to pull out the date, time, vehicle, and what's being fixed.
-3. **Books** the appointment on your **Google Calendar**.
-4. When a message is vague, it **texts your personal phone** (via Twilio) to ask. You **reply with the answer**, and it finishes booking — no double-texting, one question at a time.
+1. **Polls** Google Voice on a schedule, fingerprinting each message so nothing
+   is processed twice.
+2. **Routes** the owner line (`732-822-8376` by default) to private
+   approvals/clarifications, and everyone else into the customer pipeline.
+3. Uses **Claude** to extract the date, time, vehicle, and service — and to make
+   conservative, non-diagnostic observations about any attached photos.
+4. **Books** clear requests on **Google Calendar** and queues a customer
+   confirmation.
+5. Builds a **private pricing recommendation** for the owner from an editable
+   price book plus comparable past jobs. Nothing priced reaches a customer until
+   the owner replies `APPROVE`, `EDIT <amount or range>`, or `NOQUOTE`.
 
-There's also a small web dashboard at `http://localhost:3000` showing what's booked, what's queued, and what needs your reply.
+A secured dashboard at `http://localhost:3000` shows browser health, the queue,
+pending approvals, recent messages with image thumbnails, and the price book.
 
-> **Why Gmail instead of reading Google Voice directly?** Google Voice has no public API. The supported, durable way to get your texts programmatically is Google Voice's built-in *forward-to-email* feature, then read them with the official Gmail API. That's what this uses.
+> **No Google Voice API.** Consumer Google Voice has no supported messaging API,
+> so this uses browser automation. It can break when Google changes the UI, and
+> it never stores your Google password or bypasses MFA — you sign in by hand once
+> to seed the browser profile.
 
 ---
 
 ## How it flows
 
 ```
-Customer text ──▶ Google Voice ──(forward)──▶ Gmail
-                                                 │
-                          every few minutes ◀────┘  (cron scan)
-                                 │
-                                 ▼
-                              Claude  ──── enough info? ──▶ Google Calendar  ✅ booked
-                                 │
-                              not sure
-                                 ▼
-                        Twilio text to YOUR phone  ──▶  you reply  ──▶  Claude  ──▶  Calendar ✅
+Customer text ─▶ Google Voice ─(poll via Chromium)─▶ normalize + fingerprint ─▶ SQLite
+                                                                 │
+                              owner line? ──────────────────────┤
+                              │                                  │
+                       APPROVE/EDIT/NOQUOTE              customer message
+                              │                                  │
+                              ▼                                  ▼
+                    release non-binding              Claude extract (+images)
+                    estimate to customer                         │
+                                                 enough info? ─▶ Calendar ✅ + confirm
+                                                         │
+                                                     not sure ─▶ private question to owner
+                                                                         │
+                                          after booking ─▶ private price recommendation to owner
 ```
+
+All outbound messages go through a **durable outbox** with idempotency keys,
+sequential sending, rate limits, retries with backoff, and recipient
+verification immediately before each send. While **observation mode** is on, the
+service parses and routes but **never sends**.
 
 ---
 
 ## Prerequisites
 
-- **Node.js 18+**
-- A **Google account** (the one receiving Google Voice texts)
+- **Node.js 18+** (Node 24 recommended)
+- A **Google account** that receives the Google Voice texts
 - An **Anthropic API key** — https://console.anthropic.com
-- A **Twilio account** + one SMS-capable phone number — https://twilio.com
 
 ---
 
 ## Setup
 
-### 1. Turn on Google Voice → email forwarding
-In Google Voice: **Settings → Messages → "Forward messages to email"** (turn on). Now every incoming text also lands in your Gmail. (Optional: also forward voicemail.)
-
-### 2. Create Google API credentials
-In the **Google Cloud Console** (https://console.cloud.google.com):
-1. Create a project (or pick one).
-2. **APIs & Services → Library** → enable **Gmail API** and **Google Calendar API**.
-3. **APIs & Services → OAuth consent screen** → set it up (External is fine), and under **Test users** add your own Google address.
-4. **APIs & Services → Credentials → Create credentials → OAuth client ID → Web application**.
-5. Under **Authorized redirect URIs**, add exactly: `http://localhost:5555`
-6. Copy the **Client ID** and **Client secret** into your `.env`.
-
-### 3. Configure the app
+### 1. Install
 ```bash
-cp .env.example .env
-# open .env and fill in every value (see comments in that file)
+cp .env.example .env       # fill in every value (see comments in that file)
 npm install
+npx playwright install chromium
 ```
 
-### 4. Authorize Google (one time)
+### 2. Google Calendar credentials (Calendar only — no Gmail)
+In the **Google Cloud Console**:
+1. Create/pick a project. **APIs & Services → Library** → enable **Google
+   Calendar API**.
+2. **OAuth consent screen** → set up (External is fine); add yourself as a test
+   user.
+3. **Credentials → Create credentials → OAuth client ID → Web application**.
+4. Add redirect URI exactly: `http://localhost:5555`.
+5. Copy **Client ID** / **Client secret** into `.env`.
+
+Then authorize once:
 ```bash
 npm run auth
 ```
-This prints a URL. Open it, choose your account, allow access. It saves a token to `google-token.json`. (If you ever revoke access, just run it again.)
+This saves `google-token.json` (used for Calendar). For headless hosts, paste
+its contents into `GOOGLE_TOKEN_JSON`.
 
-### 5. Point Twilio's number at the app
-Your phone replies have to reach the app, so it needs a public URL.
-
-- **Local testing:** install [ngrok](https://ngrok.com), run `ngrok http 3000`, copy the `https://…ngrok…` URL.
-- In the **Twilio Console → your number → Messaging → "A message comes in"**, set a **Webhook (HTTP POST)** to: `https://YOUR-PUBLIC-URL/sms/incoming`
-- Put that same base URL in `.env` as `PUBLIC_URL=` to enable signature verification (recommended).
-
-### 6. Run it
+### 3. Seed the Google Voice browser session (you sign in by hand)
 ```bash
-npm start
+npm run seed-profile
 ```
-Open **http://localhost:3000**. It scans on startup and then every few minutes. Text your Google Voice number to test.
+A real Chromium window opens using the persistent profile at `GV_PROFILE_PATH`.
+**Sign in to Google, complete 2-step verification, and open Messages**, then
+close the window. The logged-in session is saved into the profile directory.
+The app never sees or stores your password.
 
-To run a single scan from the terminal without the server:
+### 4. Run it
 ```bash
+npm start          # starts the server + scheduled polling
+# or a single cycle:
 npm run run-once
 ```
+Open **http://localhost:3000** and log in with `DASHBOARD_USER` /
+`DASHBOARD_PASSWORD`. It starts in **observation mode** (`OBSERVATION_MODE=true`)
+— it reads and routes but sends nothing until you flip the switch.
+
+---
+
+## Owner workflow
+
+- Booking clarifications and price approvals arrive as messages on your owner
+  line.
+- For a price approval, reply with exactly one of:
+  - `APPROVE` — send the recommended estimate to the customer.
+  - `EDIT 200` or `EDIT 180-240` — send your adjusted estimate.
+  - `NOQUOTE` — send nothing.
+- Anything ambiguous gets a private "reply APPROVE / EDIT / NOQUOTE" correction;
+  no price is ever sent on a vague reply.
+
+Customer estimates are always explicitly **non-binding**.
 
 ---
 
@@ -90,64 +126,63 @@ npm run run-once
 
 | Variable | What it does |
 |---|---|
-| `ANTHROPIC_MODEL` | `claude-sonnet-4-6` (default, good date reasoning). Cheaper: `claude-haiku-4-5`. Strongest: `claude-opus-4-8`. |
-| `GMAIL_QUERY` | Gmail search selecting your Voice texts. Default targets `txt.voice.google.com`. |
-| `GOOGLE_CALENDAR_ID` | `primary`, or a specific calendar's ID. |
-| `SHOP_TIMEZONE` | IANA zone (e.g. `America/Chicago`) used to read "Tuesday at 2". |
-| `DEFAULT_APPOINTMENT_MINUTES` | Length when the customer doesn't say (default 60). |
-| `CRON_SCHEDULE` | Scan frequency, cron syntax (default `*/5 * * * *` = every 5 min). |
-| `MAX_CLARIFICATION_ROUNDS` | How many follow-up texts before it gives up (default 3). |
-| `OWNER_PHONE_NUMBER` | Your cell. Questions go here; only replies from here are accepted. |
-
-Want it to ask you *more* or *less* often? Edit the guidance in `src/claude.js` (the `systemPrompt`) — it currently errs toward asking whenever a date or time is missing or vague.
+| `ANTHROPIC_MODEL` | `claude-sonnet-4-6` (default). Cheaper: `claude-haiku-4-5`. Strongest: `claude-opus-4-8`. |
+| `OWNER_PHONE_NUMBER` | The owner line. Only messages from here are owner input. Stored normalized to 10 digits. |
+| `OBSERVATION_MODE` | `true` = parse/route but never send (default). Set `false` only after the live smoke test. |
+| `GV_PROFILE_PATH` | Persistent Chromium profile directory. |
+| `MEDIA_PATH` / `DIAGNOSTICS_PATH` | Where images / diagnostic screenshots are stored. |
+| `POLL_INTERVAL_SECONDS` | Inbox poll frequency. |
+| `SEND_RATE_PER_MINUTE` | Outbound rate limit. |
+| `MAX_SEND_RETRIES` | Retries before a send is marked failed. |
+| `MEDIA_RETENTION_DAYS` | Days to keep downloaded media (default 90). |
+| `MAX_IMAGES_PER_MESSAGE` / `MAX_ATTACHMENT_BYTES` | Image safety limits. |
+| `DASHBOARD_USER` / `DASHBOARD_PASSWORD` | Dashboard login (no password = locked). |
+| `GOOGLE_CALENDAR_ID` | `primary`, or a specific calendar ID. |
+| `SHOP_TIMEZONE` | IANA zone used to read "Tuesday at 2". |
+| `DEFAULT_APPOINTMENT_MINUTES` | Length when unspecified (default 60). |
+| `CRON_SCHEDULE` | Poll schedule (default `*/5 * * * *`). |
 
 ---
 
-## Deploy to Render
+## Deploy to Render (Docker)
 
-This repo includes a **`render.yaml` blueprint**, so most of the setup is filling in secrets. The app runs as one always-on web service that handles both the scheduled scan and your reply webhook.
+The repo includes a **Docker `render.yaml` blueprint**. Chromium needs more
+memory than the free tier, so it uses a paid instance with a `/data` persistent
+disk holding the SQLite DB, the browser profile, media, and diagnostics.
 
-> **Heads up on cost:** this needs to stay running to scan on schedule. Render's *free* web service sleeps after ~15 min of inactivity (which stops the scanning) and has no persistent disk (which would reset the database and risk re-booking old texts). So the blueprint uses the **Starter** instance (~$7/mo) with a 1 GB disk. That's the realistic minimum for this app.
+1. **Authorize Calendar locally** (`npm run auth`) and copy `google-token.json`
+   contents for `GOOGLE_TOKEN_JSON`.
+2. **Seed the Google Voice profile** locally (`npm run seed-profile`) and copy
+   the profile directory onto the service's `/data/google-voice-profile` (e.g.
+   via a Render shell `scp`/upload, or by running the seed on a machine with a
+   display and syncing the folder). The app never stores a password.
+3. **Push to a private Git repo** and create the Blueprint in Render. Fill in the
+   prompted secrets (`ANTHROPIC_API_KEY`, `GOOGLE_*`, `OWNER_PHONE_NUMBER`,
+   `DASHBOARD_USER`/`DASHBOARD_PASSWORD`, `SHOP_*`).
+4. **Deploy in observation mode** (the blueprint default). Open the dashboard
+   and verify: login health is green, conversations parse, deduplication holds,
+   owner routing works, images download, and recipient selection is correct —
+   all **without sending**.
+5. **Enable sending** only after the live checklist
+   (`docs/google-voice-live-test-checklist.md`) passes: set `OBSERVATION_MODE`
+   to `false` (env var or the dashboard toggle).
 
-**Steps:**
-
-1. **Generate your Google token locally first.** On your own computer, after filling in `.env`, run:
-   ```bash
-   npm install && npm run auth
-   ```
-   This creates `google-token.json`. Open it and copy the whole contents (it's one JSON object) — you'll paste it into Render as `GOOGLE_TOKEN_JSON`. (Doing auth locally is necessary because the Google sign-in needs a real browser; a server can't click "Allow" for you.)
-
-2. **Push this project to a private Git repo** (GitHub, GitLab, or Bitbucket). Render Blueprints deploy from Git.
-
-3. **Create the Blueprint.** In Render: **New ▸ Blueprint**, connect the repo. Render reads `render.yaml` and prompts you for each secret:
-   - `ANTHROPIC_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-   - `GOOGLE_TOKEN_JSON` ← paste the file contents from step 1
-   - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `OWNER_PHONE_NUMBER`
-   - `SHOP_NAME`, `SHOP_TIMEZONE`
-   
-   Click **Deploy**.
-
-4. **Grab your URL** (e.g. `https://gv-appointment-bot.onrender.com`). Then:
-   - In Render ▸ your service ▸ **Environment**, set `PUBLIC_URL` to that URL and save (this turns on Twilio signature verification).
-   - In **Twilio Console ▸ your number ▸ Messaging ▸ "A message comes in"**, set the **Webhook (POST)** to `https://YOUR-URL/sms/incoming`.
-
-5. **Test:** open your Render URL to see the dashboard, then text your Google Voice number. Watch it appear, get booked, or trigger a clarification text to your phone.
-
-When you change anything in `render.yaml` later and push, Render redeploys automatically. (Secrets you entered in the dashboard are preserved.)
-
-### Other hosts
-
-The same idea works on any always-on host (Fly.io, Railway, a VPS): set the same environment variables (use `GOOGLE_TOKEN_JSON` instead of shipping the token file), make sure the process stays up (e.g. `pm2 start src/server.js`), and point Twilio's webhook at `https://YOUR-URL/sms/incoming`. The built-in scheduler means you don't need a system crontab.
+`/healthz` is public for Render's health check; every other route requires the
+dashboard credentials.
 
 ---
 
 ## Notes & caveats
 
-- **First-run safety:** test with your own phone first. Claude is told to ask rather than guess, but review the calendar until you trust it.
-- **Costs:** Claude charges per message parsed (a few cents at most on Sonnet, less on Haiku). Twilio charges per SMS. Gmail/Calendar APIs are free at this volume.
-- **Privacy/security:** `.env`, `google-token.json`, and `data.db` hold secrets and customer data — they're git-ignored; keep them off public servers/repos. Set `PUBLIC_URL` to verify Twilio webhook signatures.
-- **State:** everything is stored in a local SQLite file (`data.db`). Messages are de-duplicated by Gmail ID, so re-scanning never double-books.
-- **Forwarding-email format:** Google occasionally tweaks the layout of forwarded texts. The app hands the raw body to Claude (which is robust to format changes) rather than relying on brittle parsing, but if your texts come from a different sender, adjust `GMAIL_QUERY`.
+- **Fragility:** Google Voice selectors live in `src/google-voice/selectors.js`.
+  A UI change is a one-file fix; record the verified date in the live checklist.
+- **Safety:** observation mode is the default; sends require an explicit flip.
+  Recipient identity is re-verified immediately before every send.
+- **Privacy:** `.env`, `google-token.json`, `data.db`, the browser profile,
+  `media/`, and `diagnostics/` hold secrets/customer data — all git-ignored.
+- **Dedup:** messages are fingerprinted (conversation + sender + timestamp +
+  normalized body + attachment metadata); restarts never re-process or
+  double-book.
 
 ---
 
@@ -155,17 +190,35 @@ The same idea works on any always-on host (Fly.io, Railway, a VPS): set the same
 
 ```
 src/
-  server.js      Express app: Twilio webhook, dashboard, cron scheduler
-  processor.js   Core pipeline: ingest → parse → book → clarify
-  google.js      OAuth client, Gmail reading, Calendar event creation
-  claude.js      Claude tool-use call that extracts appointment fields
-  twilio.js      Sends clarification texts to you
-  dashboard.js   Renders the status page
-  db.js          SQLite schema + queries
-  time.js        Timezone-safe date helpers
-  config.js      Loads/validates .env
-  run-once.js    One-off scan from the CLI
+  server.js              Express app: secured dashboard, routes, schedulers
+  run-once.js            One automation cycle (poll → process → drain); CLI entry
+  processor.js           Routing, booking, clarifications, pricing handoff
+  router.js              Owner vs customer routing + approval handling
+  approvals.js           Strict APPROVE / EDIT / NOQUOTE parser
+  pricing.js             Deterministic price baseline + non-binding wording
+  history.js             Comparable past-job selection
+  claude.js              Claude tool-use: appointment extraction + image observations
+  google.js              Calendar OAuth + event creation
+  media.js               Attachment validation + atomic storage
+  retention.js           Media/diagnostics retention (contained, DB-driven)
+  auth.js                Constant-time dashboard auth
+  dashboard.js           Dashboard rendering + price-book validation
+  db.js                  SQLite schema + repositories
+  config.js              Env config + owner-number normalization
+  time.js                Timezone-safe date helpers
+  google-voice/
+    session.js           Persistent browser session, mutex, health, screenshots
+    browser.js           Playwright persistent-context launcher
+    inbox.js             Conversation/message/image parsing + polling
+    outbox.js            Durable send queue (idempotency, backoff, rate limit)
+    sender.js            Composer orchestration + recipient verification
+    normalize.js         Phone/body normalization + fingerprints
+    selectors.js         Centralized (fragile) Google Voice DOM selectors
+    types.js             Shared JSDoc typedefs + browser states
 scripts/
-  setup-google-auth.js   One-time Google authorization
-render.yaml      Render deployment blueprint
+  setup-google-auth.js          One-time Calendar authorization
+  seed-google-voice-profile.js  Interactive Google Voice sign-in (no passwords)
+  lint.js                       Syntax-check lint
+Dockerfile               Playwright-based image for Render
+render.yaml              Render Docker blueprint
 ```

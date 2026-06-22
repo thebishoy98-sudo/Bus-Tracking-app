@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import Database from 'better-sqlite3';
 import { config } from './config.js';
 
@@ -498,6 +500,10 @@ function makeStore(db) {
 
 // Open a database at the given path, apply migrations, and return { db, store }.
 export function openDatabase(dbPath = config.dbPath) {
+  if (dbPath !== ':memory:') {
+    const dir = path.dirname(path.resolve(dbPath));
+    fs.mkdirSync(dir, { recursive: true });
+  }
   const db = new Database(dbPath);
   if (dbPath !== ':memory:') db.pragma('journal_mode = WAL');
   migrate(db);

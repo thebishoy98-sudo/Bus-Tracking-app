@@ -7,3 +7,9 @@ data.db-wal
 data.db-shm
 *.log
 .DS_Store
+
+# Local runtime state for the Google Voice browser automation
+.gv-profile/
+google-voice-profile/
+media/
+diagnostics/
