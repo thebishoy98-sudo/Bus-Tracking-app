@@ -1,7 +1,7 @@
 # Playwright-compatible image: Chromium + matching system deps are preinstalled
 # under /ms-playwright, so the persistent Google Voice browser session runs
-# without extra apt packages. Pin the tag to the installed Playwright version.
-FROM mcr.microsoft.com/playwright:v1.49.1-jammy
+# without extra apt packages. Pin the tag to package-lock.json's Playwright version.
+FROM mcr.microsoft.com/playwright:v1.61.0-jammy
 
 WORKDIR /app
 ENV NODE_ENV=production
