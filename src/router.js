@@ -10,6 +10,20 @@ export function routeBySender(senderNumber, ownerNumber) {
   return isOwnerNumber(senderNumber, ownerNumber) ? 'owner' : 'customer';
 }
 
+export function routeInboundMessage({ store, config, senderNumber, body }) {
+  if (!isOwnerNumber(senderNumber, config.ownerNumber)) return 'customer';
+
+  const cmd = parseApprovalCommand(body || '');
+  if (cmd.type !== 'unknown') return 'owner';
+
+  // Clarification answers are intentionally free-form, so keep owner-number
+  // messages in owner routing while a clarification is open.
+  if (store.getPendingOwnerAction?.('clarification')) return 'owner';
+
+  // Otherwise the owner line can act as an assistant/customer intake line.
+  return 'customer';
+}
+
 // Queue a private note back to the owner (never to a customer).
 export function enqueueOwnerNote(store, config, body, tag = '') {
   const key = makeIdempotencyKey({ recipient: config.ownerNumber, kind: 'text', body, tag });
@@ -71,4 +85,4 @@ export function handleOwnerReply({ store, config, text }) {
 
 function safeJson(s) { try { return JSON.parse(s); } catch { return null; } }
 
-export default { routeBySender, handleOwnerReply, enqueueOwnerNote, formatCustomerEstimate };
+export default { routeBySender, routeInboundMessage, handleOwnerReply, enqueueOwnerNote, formatCustomerEstimate };

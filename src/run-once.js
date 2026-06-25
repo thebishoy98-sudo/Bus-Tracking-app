@@ -47,12 +47,15 @@ export async function runCycle({ session = getSession(), config = defaultConfig 
 // runCycle does not execute the cycle.)
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
-  runCycle()
-    .then((r) => {
+  const session = getSession();
+  runCycle({ session })
+    .then(async (r) => {
+      await session.close();
       console.log('Done.', JSON.stringify(r, null, 2));
       process.exit(0);
     })
-    .catch((err) => {
+    .catch(async (err) => {
+      await session.close().catch(() => {});
       console.error('Cycle failed:', err);
       process.exit(1);
     });

@@ -32,9 +32,10 @@ test('no source file imports twilio', () => {
   }
 });
 
-test('google.js requests only the Calendar scope, not Gmail', () => {
+test('google.js requests Calendar and Contacts scopes, not Gmail', () => {
   const src = read(path.join(SRC, 'google.js'));
   assert.match(src, /calendar\.events/);
+  assert.match(src, /auth\/contacts/);
   assert.ok(!/gmail/i.test(src), 'google.js still references Gmail');
 });
 

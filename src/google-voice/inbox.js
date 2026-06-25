@@ -76,6 +76,54 @@ export function parseThread(html, { conversationId = null } = {}) {
   });
 }
 
+function isoFromMs(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return new Date(n).toISOString();
+}
+
+function phoneFromThreadId(id) {
+  const raw = String(id || '');
+  const m = raw.match(/t\.(\+\d+)/);
+  return m ? m[1] : null;
+}
+
+function messageFromApi(msg, conv) {
+  const directionCode = msg?.[4];
+  const typeCode = msg?.[12];
+  const isOutgoing = directionCode === 11 || typeCode === 6;
+  const participant = msg?.[15] || conv.phoneNumber;
+  return {
+    conversationId: conv.conversationId,
+    senderNumber: isOutgoing ? msg?.[2] : participant,
+    senderName: null,
+    isOutgoing,
+    timestamp: isoFromMs(msg?.[1]),
+    text: msg?.[9] || '',
+    attachments: [],
+  };
+}
+
+// Google Voice's private thread-list endpoint returns positional arrays. This is
+// unsupported, but it is currently more stable than scraping rendered text.
+export function parseApiThreadList(payload) {
+  const threads = Array.isArray(payload?.[0]) ? payload[0] : [];
+  return threads.map((thread) => {
+    const conversationId = thread?.[0] || null;
+    const messages = Array.isArray(thread?.[2]) ? thread[2] : [];
+    const phoneNumber = messages.find((m) => m?.[15])?.[15] || phoneFromThreadId(conversationId);
+    const conv = {
+      conversationId,
+      phoneNumber,
+      displayName: phoneNumber,
+      lastMessageAt: isoFromMs(thread?.[1]),
+      unread: false,
+      snippet: messages.at(-1)?.[9] || null,
+    };
+    return { ...conv, messages: messages.map((m) => messageFromApi(m, conv)) };
+  });
+}
+
 // ── Orchestration ───────────────────────────────────────────
 
 async function ingestAttachment({ att, messageId, index, store, config, fetchAttachment, logger }) {
@@ -123,6 +171,45 @@ export async function pollInbox({
   reader, store, config, ownerNumber, fetchAttachment,
   maxConversations = 25, logger = console,
 }) {
+  if (reader.listThreadsApi) {
+    const convs = parseApiThreadList(await reader.listThreadsApi()).slice(0, maxConversations);
+    let added = 0;
+
+    for (const conv of convs) {
+      const phone = normalizePhone(conv.phoneNumber);
+      const isOwner = isOwnerNumber(conv.phoneNumber, ownerNumber) ? 1 : 0;
+      const convId = store.upsertConversation({
+        gv_conversation_id: conv.conversationId,
+        phone_number: phone,
+        display_name: conv.displayName,
+        is_owner: isOwner,
+      });
+      if (conv.lastMessageAt) store.touchConversation(convId, conv.lastMessageAt);
+
+      for (const raw of conv.messages) {
+        const msg = normalizeMessage(
+          { ...raw, senderNumber: raw.senderNumber || conv.phoneNumber },
+          ownerNumber,
+        );
+        if (msg.direction !== 'inbound') continue;
+        if (store.hasFingerprint(msg.fingerprint)) continue;
+
+        const res = store.insertInboundMessage({
+          conversation_id: convId,
+          fingerprint: msg.fingerprint,
+          direction: msg.direction,
+          sender_number: msg.senderNumber || phone,
+          body: msg.body,
+          sent_at: msg.timestamp,
+          has_attachments: msg.hasAttachments ? 1 : 0,
+        });
+        if (res.inserted) added++;
+      }
+    }
+
+    return { loggedOut: false, added, conversations: convs.length };
+  }
+
   const listHtml = await reader.listConversationsHtml();
   if (looksLoggedOut(listHtml)) return { loggedOut: true, added: 0, conversations: 0 };
 
@@ -183,6 +270,21 @@ export async function pollInbox({
 // are best-effort and verified during the live smoke test (Task 14).
 export function browserReader(session) {
   return {
+    async listThreadsApi() {
+      return session.withPage(async (page) => {
+        const seen = [];
+        const responsePromise = page.waitForResponse(
+          (res) => res.url().includes('/voice/v1/voiceclient/api2thread/list'),
+          { timeout: 30_000 },
+        ).catch(() => null);
+        await page.goto(URLS.messages);
+        const response = await responsePromise;
+        if (!response) return [[], null, null];
+        const payload = await response.json();
+        seen.push(payload);
+        return seen.at(-1);
+      });
+    },
     async listConversationsHtml() {
       return session.withPage(async (page) => {
         await page.goto(URLS.messages);

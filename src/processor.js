@@ -2,12 +2,13 @@ import { store as defaultStore } from './db.js';
 import { config as defaultConfig } from './config.js';
 import { createCalendarEvent } from './google.js';
 import { extractAppointment, extractWithClarification } from './claude.js';
-import { routeBySender, handleOwnerReply, enqueueOwnerNote } from './router.js';
+import { routeInboundMessage, handleOwnerReply, enqueueOwnerNote } from './router.js';
 import { enqueueOutbound, makeIdempotencyKey } from './google-voice/outbox.js';
 import { recommend, formatOwnerRecommendation } from './pricing.js';
 import { explainPricing } from './claude.js';
 import { selectComparables } from './history.js';
 import { formatLocal, todayISO } from './time.js';
+import { upsertJobContact as defaultUpsertJobContact } from './contacts.js';
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const safeJSON = (s) => { try { return JSON.parse(s); } catch { return null; } };
@@ -25,6 +26,20 @@ function buildEvent(message, conv, ex) {
   return { title, description, start_local: ex.start_local, duration_minutes: ex.duration_minutes };
 }
 
+function observeWouldBook(store, messageId, ex, event, context = 'booking') {
+  store.updateInboundMessage(messageId, { status: 'observed', extracted: JSON.stringify(ex) });
+  log(`observation mode: would ${context} "${event.title}" @ ${event.start_local}`);
+}
+
+async function attachJobContact(m, conv, ex, { config, contacts }) {
+  if (!ex?.is_appointment_request) return ex;
+  const phoneNumber = conv?.phone_number || m.sender_number;
+  if (!phoneNumber) return ex;
+  const result = await contacts.upsertJobContact({ config, phoneNumber, extraction: ex });
+  if (!result?.displayName) return ex;
+  return { ...ex, contact_name: result.displayName, contact_resource_name: result.resourceName || null };
+}
+
 // Queue a customer-facing message to the conversation it originated from.
 function enqueueCustomerMessage(store, conv, body, tag) {
   const key = makeIdempotencyKey({ recipient: conv.phone_number, kind: 'text', body, tag });
@@ -40,7 +55,7 @@ function storedImagesFor(store, messageId) {
 
 // After booking, build a PRIVATE pricing recommendation for the owner. The
 // customer never receives a price until the owner replies APPROVE / EDIT.
-async function queuePricingRecommendation(m, ex, conv, { store, config }) {
+async function queuePricingRecommendation(m, ex, conv, { store, config, explainPrice = explainPricing }) {
   const service = ex.service;
   if (!service || !conv) return;
   // One pending pricing approval per conversation at a time.
@@ -52,7 +67,7 @@ async function queuePricingRecommendation(m, ex, conv, { store, config }) {
 
   // Best-effort: let Claude explain/refine assumptions (numbers stay deterministic).
   try {
-    const explained = await explainPricing({ rec, message: { body: m.body }, config });
+    const explained = await explainPrice({ rec, message: { body: m.body }, config });
     if (explained?.assumptions?.length) rec.assumptions = explained.assumptions;
     if (explained?.rationale) rec.assumptions = [...(rec.assumptions || []), explained.rationale];
   } catch { /* keep deterministic recommendation */ }
@@ -70,13 +85,13 @@ async function queuePricingRecommendation(m, ex, conv, { store, config }) {
   );
 }
 
-async function processCustomerMessage(m, { store, config }) {
+async function processCustomerMessage(m, { store, config, extractors, contacts, calendar }) {
   const conv = store.getConversationById(m.conversation_id);
   const images = storedImagesFor(store, m.id);
   let ex = m.extracted ? safeJSON(m.extracted) : null;
   if (!ex) {
     try {
-      ex = await extractAppointment(
+      ex = await extractors.extractAppointment(
         { from_name: conv?.display_name, from_number: m.sender_number, body: m.body },
         { images, config },
       );
@@ -93,10 +108,21 @@ async function processCustomerMessage(m, { store, config }) {
     return;
   }
 
+  try {
+    ex = await attachJobContact(m, conv, ex, { config, contacts });
+    store.updateInboundMessage(m.id, { extracted: JSON.stringify(ex) });
+  } catch (err) {
+    log('contact error:', err.message);
+  }
+
   if (ex.has_enough_info && ex.start_local) {
     try {
       const event = buildEvent(m, conv, ex);
-      const { link } = await createCalendarEvent(event);
+      if (config.observationMode) {
+        observeWouldBook(store, m.id, ex, event);
+        return;
+      }
+      const { link } = await calendar.createCalendarEvent(event);
       store.updateInboundMessage(m.id, { status: 'scheduled', extracted: JSON.stringify(ex) });
       enqueueCustomerMessage(
         store, conv,
@@ -132,7 +158,7 @@ async function processCustomerMessage(m, { store, config }) {
   );
 }
 
-async function handleClarificationAnswer(action, answerText, { store, config }) {
+async function handleClarificationAnswer(action, answerText, { store, config, extractors, contacts, calendar }) {
   const m = action.customer_message_id ? store.getInboundById(action.customer_message_id) : null;
   const conv = m ? store.getConversationById(m.conversation_id) : null;
   if (!m || !conv) {
@@ -142,7 +168,7 @@ async function handleClarificationAnswer(action, answerText, { store, config }) 
   const payload = safeJSON(action.payload) || {};
   let ex;
   try {
-    ex = await extractWithClarification(
+    ex = await extractors.extractWithClarification(
       { from_name: conv.display_name, from_number: m.sender_number, body: m.body },
       payload.question, answerText,
     );
@@ -155,8 +181,15 @@ async function handleClarificationAnswer(action, answerText, { store, config }) 
 
   if (ex.has_enough_info && ex.start_local) {
     try {
+      ex = await attachJobContact(m, conv, ex, { config, contacts });
+      store.updateInboundMessage(m.id, { extracted: JSON.stringify(ex) });
       const event = buildEvent(m, conv, ex);
-      await createCalendarEvent(event);
+      if (config.observationMode) {
+        observeWouldBook(store, m.id, ex, event, 'book after clarification');
+        store.resolveOwnerAction(action.id, 'observed');
+        return { matched: true, booked: false, observed: true };
+      }
+      await calendar.createCalendarEvent(event);
       store.updateInboundMessage(m.id, { status: 'scheduled', extracted: JSON.stringify(ex) });
       store.resolveOwnerAction(action.id, 'resolved');
       enqueueCustomerMessage(store, conv,
@@ -189,11 +222,24 @@ function handleOwnerInbound(m, deps) {
 }
 
 // Process all newly ingested inbound messages: route owner vs customer.
-export async function processInbound({ store = defaultStore, config = defaultConfig } = {}) {
-  const deps = { store, config };
+export async function processInbound(options = {}) {
+  const {
+    store = defaultStore,
+    config = defaultConfig,
+    extractors = {},
+    contacts = {},
+    calendar = {},
+  } = options;
+  const deps = {
+    store,
+    config,
+    extractors: { extractAppointment, extractWithClarification, ...extractors },
+    contacts: { upsertJobContact: defaultUpsertJobContact, ...contacts },
+    calendar: { createCalendarEvent, ...calendar },
+  };
   for (const m of store.getNewInbound()) {
     try {
-      if (routeBySender(m.sender_number, config.ownerNumber) === 'owner') {
+      if (routeInboundMessage({ store, config, senderNumber: m.sender_number, body: m.body }) === 'owner') {
         await handleOwnerInbound(m, deps);
         store.updateInboundMessage(m.id, { status: 'processed' });
       } else {

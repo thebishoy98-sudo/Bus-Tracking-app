@@ -4,10 +4,11 @@ import { config } from './config.js';
 import { addMinutesLocal } from './time.js';
 
 // ── OAuth ────────────────────────────────────────────────────
-// Calendar only. Messaging is handled by the Google Voice browser adapter, so
-// we no longer request any mail scope.
+// Calendar + Contacts only. Messaging is handled by the Google Voice browser
+// adapter, so we no longer request any mail scope.
 export const SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/contacts',
 ];
 
 export function makeOAuthClient() {

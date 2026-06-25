@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../src/db.js';
-import { routeBySender, handleOwnerReply } from '../src/router.js';
+import { routeBySender, routeInboundMessage, handleOwnerReply } from '../src/router.js';
 
 const OWNER = '7328228376';
 const config = { ownerNumber: OWNER };
@@ -11,6 +11,34 @@ test('only the owner line is routed as owner input', () => {
   assert.equal(routeBySender('+1 (732) 822-8376', OWNER), 'owner');
   assert.equal(routeBySender('9085551212', OWNER), 'customer');
   assert.equal(routeBySender('', OWNER), 'customer');
+});
+
+test('owner line appointment-looking text routes as customer intake', () => {
+  const noPending = { getPendingOwnerAction: () => null };
+  assert.equal(
+    routeInboundMessage({
+      store: noPending,
+      config,
+      senderNumber: OWNER,
+      body: 'Toyota Highlander motor mounts this Saturday',
+    }),
+    'customer',
+  );
+});
+
+test('owner line approval commands still route as owner input', () => {
+  const noPending = { getPendingOwnerAction: () => null };
+  assert.equal(routeInboundMessage({ store: noPending, config, senderNumber: OWNER, body: 'APPROVE' }), 'owner');
+  assert.equal(routeInboundMessage({ store: noPending, config, senderNumber: OWNER, body: 'EDIT 250-350' }), 'owner');
+  assert.equal(routeInboundMessage({ store: noPending, config, senderNumber: OWNER, body: 'NOQUOTE' }), 'owner');
+});
+
+test('owner line replies route as owner when a clarification is pending', () => {
+  const pendingClarification = { getPendingOwnerAction: (kind) => (kind === 'clarification' ? { id: 1 } : null) };
+  assert.equal(
+    routeInboundMessage({ store: pendingClarification, config, senderNumber: OWNER, body: 'Saturday at 10am' }),
+    'owner',
+  );
 });
 
 function seedPendingApproval(store, { low = 180, high = 240, service = 'brake pads' } = {}) {
