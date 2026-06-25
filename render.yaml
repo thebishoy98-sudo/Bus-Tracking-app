@@ -20,7 +20,7 @@ services:
     name: gv-appointment-bot
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: standard
+    plan: starter
     healthCheckPath: /healthz
     disk:
       name: data
