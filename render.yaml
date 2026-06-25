@@ -84,5 +84,7 @@ services:
         value: /data/diagnostics
       - key: GV_PROFILE_ARCHIVE_PATH
         value: /app/secrets/gv-profile.tar.gz.enc
+      - key: GV_STORAGE_STATE_PATH
+        value: /app/secrets/gv-storage-state.json.enc
       - key: NODE_ENV
         value: production

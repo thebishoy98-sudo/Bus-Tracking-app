@@ -40,6 +40,53 @@ function keyFromPassword(password, salt) {
   return crypto.scryptSync(password, salt, 32);
 }
 
+function encryptBufferToFile({ buffer, archivePath, password }) {
+  if (!password) throw new Error('GV_PROFILE_ARCHIVE_PASSWORD is required.');
+  fs.mkdirSync(path.dirname(archivePath), { recursive: true });
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', keyFromPassword(password, salt), iv);
+  const ciphertext = Buffer.concat([cipher.update(buffer), cipher.final()]);
+  const header = {
+    magic: MAGIC,
+    salt: salt.toString('base64'),
+    iv: iv.toString('base64'),
+    tag: cipher.getAuthTag().toString('base64'),
+  };
+  fs.writeFileSync(archivePath, Buffer.concat([
+    Buffer.from(`${JSON.stringify(header)}\n`, 'utf8'),
+    ciphertext,
+  ]));
+}
+
+function decryptFileToBuffer({ archivePath, password }) {
+  const raw = fs.readFileSync(archivePath);
+  const newline = raw.indexOf(0x0a);
+  if (newline < 0) throw new Error('Invalid Google Voice profile archive.');
+  const header = JSON.parse(raw.subarray(0, newline).toString('utf8'));
+  if (header.magic !== MAGIC) throw new Error('Unsupported Google Voice profile archive.');
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    keyFromPassword(password, Buffer.from(header.salt, 'base64')),
+    Buffer.from(header.iv, 'base64'),
+  );
+  decipher.setAuthTag(Buffer.from(header.tag, 'base64'));
+  return Buffer.concat([decipher.update(raw.subarray(newline + 1)), decipher.final()]);
+}
+
+export function encryptJsonFile({ value, archivePath, password }) {
+  encryptBufferToFile({
+    buffer: Buffer.from(JSON.stringify(value), 'utf8'),
+    archivePath,
+    password,
+  });
+  return { archivePath };
+}
+
+export function readEncryptedJsonFile({ archivePath, password }) {
+  return JSON.parse(decryptFileToBuffer({ archivePath, password }).toString('utf8'));
+}
+
 export async function encryptDirectory({ sourceDir, archivePath, password, excludes = DEFAULT_EXCLUDES }) {
   if (!sourceDir || !fs.existsSync(sourceDir)) {
     throw new Error(`Profile source directory does not exist: ${sourceDir}`);
@@ -52,39 +99,13 @@ export async function encryptDirectory({ sourceDir, archivePath, password, exclu
   const excludeArgs = excludes.flatMap((pattern) => ['--exclude', pattern]);
   await runTar(['-czf', tarPath, ...excludeArgs, '-C', sourceDir, '.']);
 
-  const plain = fs.readFileSync(tarPath);
-  const salt = crypto.randomBytes(16);
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', keyFromPassword(password, salt), iv);
-  const ciphertext = Buffer.concat([cipher.update(plain), cipher.final()]);
-  const header = {
-    magic: MAGIC,
-    salt: salt.toString('base64'),
-    iv: iv.toString('base64'),
-    tag: cipher.getAuthTag().toString('base64'),
-  };
-  fs.writeFileSync(archivePath, Buffer.concat([
-    Buffer.from(`${JSON.stringify(header)}\n`, 'utf8'),
-    ciphertext,
-  ]));
+  encryptBufferToFile({ buffer: fs.readFileSync(tarPath), archivePath, password });
   fs.rmSync(tempRoot, { recursive: true, force: true });
   return { archivePath };
 }
 
 function decryptArchiveToTar({ archivePath, password, tarPath }) {
-  const raw = fs.readFileSync(archivePath);
-  const newline = raw.indexOf(0x0a);
-  if (newline < 0) throw new Error('Invalid Google Voice profile archive.');
-  const header = JSON.parse(raw.subarray(0, newline).toString('utf8'));
-  if (header.magic !== MAGIC) throw new Error('Unsupported Google Voice profile archive.');
-  const decipher = crypto.createDecipheriv(
-    'aes-256-gcm',
-    keyFromPassword(password, Buffer.from(header.salt, 'base64')),
-    Buffer.from(header.iv, 'base64'),
-  );
-  decipher.setAuthTag(Buffer.from(header.tag, 'base64'));
-  const plain = Buffer.concat([decipher.update(raw.subarray(newline + 1)), decipher.final()]);
-  fs.writeFileSync(tarPath, plain);
+  fs.writeFileSync(tarPath, decryptFileToBuffer({ archivePath, password }));
 }
 
 export async function restoreEncryptedProfile({ archivePath, targetDir, password }) {

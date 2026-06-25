@@ -16,3 +16,4 @@ diagnostics/
 output/
 secrets/*
 !secrets/gv-profile.tar.gz.enc
+!secrets/gv-storage-state.json.enc

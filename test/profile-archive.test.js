@@ -5,7 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   encryptDirectory,
+  encryptJsonFile,
   isDirectoryEmpty,
+  readEncryptedJsonFile,
   restoreEncryptedProfile,
 } from '../src/profile-archive.js';
 
@@ -83,4 +85,18 @@ test('encryptDirectory and restoreEncryptedProfile round-trip a profile director
   assert.equal(result.restored, true);
   assert.equal(result.reason, 'restored');
   assert.equal(fs.readFileSync(path.join(targetDir, 'Default', 'Cookies'), 'utf8'), 'signed-in-cookie-state');
+});
+
+test('encryptJsonFile and readEncryptedJsonFile round-trip storage state JSON', () => {
+  const root = tempDir();
+  const archivePath = path.join(root, 'storage-state.json.enc');
+  const state = {
+    cookies: [{ name: 'SID', value: 'cookie', domain: '.google.com', path: '/' }],
+    origins: [],
+  };
+
+  encryptJsonFile({ value: state, archivePath, password: 'secret' });
+  const restored = readEncryptedJsonFile({ archivePath, password: 'secret' });
+
+  assert.deepEqual(restored, state);
 });

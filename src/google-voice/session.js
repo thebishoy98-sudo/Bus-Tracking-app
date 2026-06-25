@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { AUTH, URLS } from './selectors.js';
 import { BROWSER_STATES } from './types.js';
+import { applyStorageState, readStorageStateFromEnv } from './storage-state.js';
 
 // A minimal promise-chaining mutex so all page operations run one at a time.
 // Google Voice is a single shared tab; concurrent navigation/clicks corrupt it.
@@ -40,6 +41,7 @@ export class GoogleVoiceSession {
     this.mutex = new Mutex();
     this.context = null;
     this.page = null;
+    this.storageStateApplied = false;
     this.lastState = BROWSER_STATES.UNKNOWN;
     this.screenshotCount = 0;
     this.maxScreenshots = 20;
@@ -52,8 +54,22 @@ export class GoogleVoiceSession {
       });
       this.context = context;
       this.page = page;
+      await this._applyStorageStateOnce();
     }
     return this.page;
+  }
+
+  async _applyStorageStateOnce() {
+    if (this.storageStateApplied || !this.context) return;
+    this.storageStateApplied = true;
+    try {
+      const loaded = readStorageStateFromEnv();
+      if (!loaded.loaded) return;
+      const result = await applyStorageState(this.context, loaded.state);
+      if (result.applied) this.log.log?.(`applied encrypted Google storage state (${result.cookies} cookies)`);
+    } catch (err) {
+      this.log.error?.('applying encrypted Google storage state failed:', err.message);
+    }
   }
 
   // Run a function with exclusive access to the (single) page.
