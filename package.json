@@ -9,6 +9,8 @@
   "scripts": {
     "start": "node src/server.js",
     "auth": "node scripts/setup-google-auth.js",
+    "profile:archive": "node scripts/archive-google-voice-profile.js",
+    "profile:restore": "node scripts/restore-google-voice-profile.js",
     "run-once": "node src/run-once.js",
     "seed-profile": "node scripts/seed-google-voice-profile.js",
     "test": "node --test",

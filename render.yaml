@@ -51,6 +51,8 @@ services:
         sync: false
       - key: SHOP_TIMEZONE
         sync: false
+      - key: GV_PROFILE_ARCHIVE_PASSWORD
+        sync: false
 
       # ── Non-secret defaults: edit here or in the dashboard ──
       - key: ANTHROPIC_MODEL
@@ -80,5 +82,7 @@ services:
         value: /data/media
       - key: DIAGNOSTICS_PATH
         value: /data/diagnostics
+      - key: GV_PROFILE_ARCHIVE_PATH
+        value: /app/secrets/gv-profile.tar.gz.enc
       - key: NODE_ENV
         value: production

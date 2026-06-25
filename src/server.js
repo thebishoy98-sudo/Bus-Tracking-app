@@ -7,6 +7,7 @@ import { renderDashboard, validatePriceEntry } from './dashboard.js';
 import { requireAuth } from './auth.js';
 import { resolveMediaPath } from './media.js';
 import { runRetention } from './retention.js';
+import { restoreProfileFromEnv } from './profile-archive.js';
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
@@ -114,6 +115,14 @@ app.post('/retention', (req, res) => {
 });
 
 // ── Start server + schedule the recurring cycle ──
+try {
+  const restored = await restoreProfileFromEnv();
+  if (restored.restored) log(`restored Google Voice profile from encrypted archive into ${config.browserProfilePath}`);
+  else if (restored.reason !== 'missing_config') log(`Google Voice profile archive restore skipped: ${restored.reason}`);
+} catch (err) {
+  log('Google Voice profile archive restore failed:', err.message);
+}
+
 app.listen(config.port, () => {
   log(`${config.shopName} appointment bot listening on http://localhost:${config.port}`);
   log(`observation mode: ${effectiveObservation() ? 'ON (not sending)' : 'OFF (sending enabled)'}`);

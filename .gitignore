@@ -14,3 +14,5 @@ google-voice-profile/
 media/
 diagnostics/
 output/
+secrets/*
+!secrets/gv-profile.tar.gz.enc
